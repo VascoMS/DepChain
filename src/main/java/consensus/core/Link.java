@@ -8,9 +8,11 @@ import consensus.util.Process;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.DatagramSocket;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -91,8 +93,40 @@ public class Link {
         }
     }
 
-    public Message receive() {
-        throw new UnsupportedOperationException();
+    public Message receive() throws LinkException {
+        try {
+            Message message;
+            if(!localMessages.isEmpty()) {
+                message = localMessages.poll();
+                acksList.add(message.getMessageId());
+                logger.info("{}: Message received from self.", message.getMessageId());
+            } else {
+                byte[] buf = new byte[65535];
+                DatagramPacket packet = new DatagramPacket(buf, buf.length);
+                socket.receive(packet);
+
+                byte[] buffer = Arrays.copyOfRange(packet.getData(), 0, packet.getLength());
+                message = new Gson().fromJson(new String(buffer), Message.class);
+                int senderId = message.getSenderId();
+                int messageId = message.getMessageId();
+                logger.info("{}: Message received from node {}.", message.getMessageId(), senderId);
+                if(message.getType() == Message.Type.ACK) {
+                    acksList.add(messageId);
+                    logger.info("{}: ACK received from node {}", message.getMessageId(), senderId);
+                } else {
+                    InetAddress senderHost = packet.getAddress();
+                    int senderPort = packet.getPort();
+                    Message response = new Message(myProcess.getId(), Message.Type.ACK);
+                    response.setMessageId(messageId);
+                    unreliableSend(senderHost, senderPort, response);
+                    logger.info("{}: ACK sent to node {}", message.getMessageId(), senderId);
+                }
+                return message;
+            }
+            return message;
+        } catch (IOException e) {
+            throw new LinkException(ErrorMessages.ReceivingError, e);
+        }
     }
 
 }
