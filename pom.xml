@@ -41,6 +41,14 @@
             <version>1.4.12</version>
         </dependency>
 
+        <!-- JUnit -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.11.3</version>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
     
 </project>

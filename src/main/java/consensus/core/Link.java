@@ -50,15 +50,15 @@ public class Link {
     }
 
     public void send(int nodeId, Message message) {
+        message.setMessageId(messageCounter.getAndIncrement());
+
+        if(nodeId == myProcess.getId()) {
+            localMessages.add(message);
+            logger.info("{}: Message {} added to local messages", message.getMessageId(), myProcess.getId());
+            return;
+        }
+
         executorService.execute(() -> {
-            message.setMessageId(messageCounter.getAndIncrement());
-
-            if(nodeId == myProcess.getId()) {
-                localMessages.add(message);
-                logger.info("{}: Message {} added to local messages", message.getMessageId(), myProcess.getId());
-                return;
-            }
-
             Process node = peers.get(nodeId);
             if(node == null) {
                 logger.error(ErrorMessages.NoSuchNodeError.getMessage());

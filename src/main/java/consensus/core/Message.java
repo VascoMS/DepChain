@@ -1,6 +1,12 @@
 package consensus.core;
 
-public class Message {
+import lombok.Getter;
+import lombok.Setter;
+
+import java.io.Serializable;
+
+@Getter
+public class Message implements Serializable {
     private final int senderId;
     private int messageId;
     private Type type;
