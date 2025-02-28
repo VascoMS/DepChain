@@ -1,35 +1,20 @@
 package consensus.util;
 
 
+import lombok.Getter;
 
+@Getter
 public class Process {
     private int id;
     private String host;
     private int port;
     private int clientPort;
-    // private String publicKeyPath;
-    // private String privateKeyPath;
+    private String publicKeyPath;
 
     public Process(int id, String host, int port, int clientPort) {
         this.id = id;
         this.host = host;
         this.port = port;
         this.clientPort = clientPort;
-    }
-
-    public int getId() {
-        return id;
-    }
-
-    public String getHost() {
-        return host;
-    }
-
-    public int getPort() {
-        return port;
-    }
-
-    public int getClientPort() {
-        return clientPort;
     }
 }

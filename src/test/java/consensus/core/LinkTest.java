@@ -1,14 +1,15 @@
 package consensus.core;
 
+import consensus.exception.ErrorMessages;
 import consensus.exception.LinkException;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import consensus.util.Process;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class LinkTest {
 
@@ -32,7 +33,7 @@ public class LinkTest {
     public void simpleSendAndReceive() throws LinkException {
 
         // Act
-        aliceLink.send(2, new Message(1, Message.Type.RECEIVE));
+        aliceLink.send(2, new Message(1, 2, Message.Type.RECEIVE, "hello"));
 
         // Assert
         Message bobMessage = bobLink.receive();
@@ -52,7 +53,7 @@ public class LinkTest {
         AtomicBoolean fail = new AtomicBoolean(false);
 
         // Act
-        aliceLink.send(1, new Message(1, Message.Type.RECEIVE));
+        aliceLink.send(1, new Message(1, 1, Message.Type.RECEIVE, "hello"));
 
         // Assert
         Message aliceMessage = aliceLink.receive();
@@ -77,6 +78,48 @@ public class LinkTest {
         if (fail.get()) {
             fail();
         }
+    }
+
+    @Test
+    public void sendingToUnknownPeer() {
+        assertThrows(
+                LinkException.class,
+                () -> { aliceLink.send(100, new Message(
+                        1,
+                        100,
+                        Message.Type.RECEIVE,
+                        "hello"
+                ));},
+                ErrorMessages.NoSuchNodeError.getMessage()
+        );
+    }
+
+    @Test
+    public void noSendOrReceiveAfterClose() throws LinkException {
+        Process process = new Process(999, "localhost", 1030, 1030);
+        Link link = new Link(process, new Process[] {aliceProcess, bobProcess}, 200);
+        link.close();
+        assertThrows(
+                LinkException.class,
+                () -> { link.send(1, new Message(
+                        999,
+                        1,
+                        Message.Type.RECEIVE,
+                        "hello"
+                ));},
+                ErrorMessages.LinkClosedException.getMessage()
+        );
+        assertThrows(
+                LinkException.class,
+                () -> { link.receive(); },
+                ErrorMessages.LinkClosedException.getMessage()
+        );
+    }
+
+    @AfterAll
+    public static void stopLinks() {
+        aliceLink.close();
+        bobLink.close();
     }
 
 }

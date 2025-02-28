@@ -5,6 +5,7 @@ import consensus.exception.ErrorMessages;
 import consensus.exception.LinkException;
 import consensus.util.CollapsingSet;
 import consensus.util.Process;
+import consensus.util.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,6 +13,8 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.DatagramSocket;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -21,14 +24,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-public class Link {
+public class Link implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(Link.class);
     private final DatagramSocket socket;
     private final Process myProcess;
     private final Map<Integer, Process> peers;
     private final CollapsingSet acksList;
     private final AtomicInteger messageCounter;
-    private final Queue<Message> localMessages;
+    private final Queue<SignedMessage> localMessages;
+    private final String privateKeyPath;
     ExecutorService executorService = Executors.newFixedThreadPool(5);
     private final int baseSleepTime;
 
@@ -36,6 +40,8 @@ public class Link {
         this.myProcess = myProcess;
         this.peers = new HashMap<>();
         this.baseSleepTime = baseSleepTime;
+        this.privateKeyPath = "../util/keys/" + myProcess.getId() + ".pem";
+
         for (Process p : peers) {
             this.peers.put(p.getId(), p);
         }
@@ -49,21 +55,31 @@ public class Link {
         this.localMessages = new ConcurrentLinkedQueue<>();
     }
 
-    public void send(int nodeId, Message message) {
+    public void send(int nodeId, Message message) throws LinkException {
+        if(socket.isClosed()) {
+            throw new LinkException(ErrorMessages.LinkClosedException);
+        }
+        SignedMessage signedMessage;
+        try {
+            signedMessage = new SignedMessage(message, loadNodePrivateKey());
+
+        } catch (Exception e) {
+            throw new LinkException(ErrorMessages.SignatureError, e);
+        }
         message.setMessageId(messageCounter.getAndIncrement());
 
         if(nodeId == myProcess.getId()) {
-            localMessages.add(message);
+            localMessages.add(signedMessage);
             logger.info("{}: Message {} added to local messages", message.getMessageId(), myProcess.getId());
             return;
         }
 
+        Process node = peers.get(nodeId);
+        if(node == null) {
+            throw new LinkException(ErrorMessages.NoSuchNodeError);
+        }
+
         executorService.execute(() -> {
-            Process node = peers.get(nodeId);
-            if(node == null) {
-                logger.error(ErrorMessages.NoSuchNodeError.getMessage());
-                return;
-            }
             try {
                 InetAddress nodeHost = InetAddress.getByName(node.getHost());
                 int nodePort = node.getPort();
@@ -82,7 +98,16 @@ public class Link {
         });
     }
 
-    public void unreliableSend(InetAddress host, int port, Message message) {
+    private PrivateKey loadNodePrivateKey() {
+        try {
+            return SecurityUtil.loadPrivateKey(privateKeyPath);
+        } catch (Exception e) {
+            logger.error(ErrorMessages.PrivateKeyError.getMessage(), e);
+            return null;
+        }
+    }
+
+    private void unreliableSend(InetAddress host, int port, Message message) {
         try {
             // Sign the message to make sure link is authenticated
             byte[] bytes = new Gson().toJson(message).getBytes();
@@ -94,8 +119,11 @@ public class Link {
     }
 
     public Message receive() throws LinkException {
+        if(socket.isClosed()) {
+            throw new LinkException(ErrorMessages.LinkClosedException);
+        }
         try {
-            Message message;
+            SignedMessage message;
             if(!localMessages.isEmpty()) {
                 message = localMessages.poll();
                 acksList.add(message.getMessageId());
@@ -106,7 +134,13 @@ public class Link {
                 socket.receive(packet);
 
                 byte[] buffer = Arrays.copyOfRange(packet.getData(), 0, packet.getLength());
-                message = new Gson().fromJson(new String(buffer), Message.class);
+                message = new Gson().fromJson(new String(buffer), SignedMessage.class);
+                PublicKey peerPublicKey = SecurityUtil.loadPublicKey(peers.get(message.getSenderId()).getPublicKeyPath());
+                boolean messageIsAuthentic = SecurityUtil.verifySignature(message, peerPublicKey);
+                if(!messageIsAuthentic) {
+                    logger.error("{}: Message received from node {} is not authentic.", message.getMessageId(), message.getSenderId());
+                    return null;
+                }
                 int senderId = message.getSenderId();
                 int messageId = message.getMessageId();
                 logger.info("{}: Message received from node {}.", message.getMessageId(), senderId);
@@ -116,7 +150,8 @@ public class Link {
                 } else {
                     InetAddress senderHost = packet.getAddress();
                     int senderPort = packet.getPort();
-                    Message response = new Message(myProcess.getId(), Message.Type.ACK);
+                    // Responding with an ACK to the sender
+                    Message response = new Message(myProcess.getId(), message.getSenderId(), Message.Type.ACK);
                     response.setMessageId(messageId);
                     unreliableSend(senderHost, senderPort, response);
                     logger.info("{}: ACK sent to node {}", message.getMessageId(), senderId);
@@ -124,9 +159,14 @@ public class Link {
                 return message;
             }
             return message;
-        } catch (IOException e) {
+        } catch (Exception e) {
             throw new LinkException(ErrorMessages.ReceivingError, e);
         }
+    }
+
+    @Override
+    public void close() {
+        socket.close();
     }
 
 }
