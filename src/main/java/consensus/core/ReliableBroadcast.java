@@ -49,7 +49,7 @@ public class ReliableBroadcast {
         // Infinite loop to keep receiving messages until delivery can be done.
         while (true) {
             Message message = link.receive();
-            if(message == null) continue;
+            if (message == null) continue;
             switch (message.getType()) {
                 case SEND -> {
                     if (sentEcho.get()) continue;
