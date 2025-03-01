@@ -32,7 +32,7 @@ public class Link implements AutoCloseable {
     private final CollapsingSet acksList;
     private final AtomicInteger messageCounter;
     private final Queue<SignedMessage> localMessages;
-    private final String privateKeyPath;
+    private final KeyService keyService;
     ExecutorService executorService = Executors.newFixedThreadPool(5);
     private final int baseSleepTime;
 
@@ -96,15 +96,6 @@ public class Link implements AutoCloseable {
                 logger.error(ErrorMessages.SendingError.getMessage(), e);
             }
         });
-    }
-
-    private PrivateKey loadNodePrivateKey() {
-        try {
-            return SecurityUtil.loadPrivateKey(privateKeyPath);
-        } catch (Exception e) {
-            logger.error(ErrorMessages.PrivateKeyError.getMessage(), e);
-            return null;
-        }
     }
 
     private void unreliableSend(InetAddress host, int port, SignedMessage message) {

@@ -17,6 +17,7 @@ import java.util.Base64;
 public class SecurityUtil {
 
     private static final Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
+    public static final String KEYSTORE_PATH = "src/main/java/consensus/util/keys/keystore.p12";
 
     public static String signMessage(Message message, PrivateKey privateKey) throws Exception {
         logger.info("Signing data...");
@@ -53,30 +54,6 @@ public class SecurityUtil {
         verifier.update(type.name().getBytes());
         if(payload != null)
             verifier.update(payload.getBytes());
-    }
-
-    public static PrivateKey loadPrivateKey(String keyFilePath){
-        try {
-            byte[] keyBytes = Files.readAllBytes(new File(keyFilePath).toPath());
-            PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
-            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            return keyFactory.generatePrivate(spec);
-        } catch (IOException | NoSuchAlgorithmException | InvalidKeySpecException ex) {
-            logger.error("Error while loading the Private key");
-        }
-        return null;
-    }
-
-    public static PublicKey loadPublicKey(String keyFilePath){
-        try {
-            byte[] keyBytes = Files.readAllBytes(new File(keyFilePath).toPath());
-            PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
-            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            return keyFactory.generatePublic(spec);
-        } catch (IOException | NoSuchAlgorithmException | InvalidKeySpecException ex) {
-            logger.error("Error while loading the Public key");
-        }
-        return null;
     }
 
     private static byte[] intToBytes(int value) {
