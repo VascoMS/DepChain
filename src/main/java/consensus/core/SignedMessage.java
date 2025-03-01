@@ -1,10 +1,12 @@
 package consensus.core;
 
 import consensus.util.SecurityUtil;
+import lombok.Getter;
 
 import java.security.PrivateKey;
 import java.security.PublicKey;
 
+@Getter
 public class SignedMessage extends Message {
     private final byte[] signature;
 

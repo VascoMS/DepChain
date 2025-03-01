@@ -10,16 +10,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ReliableBroadcast implements AutoCloseable {
 
-    private Process myProcess;
-    private Process[] peers;
-    private Link link;
-    private AtomicBoolean sentEcho;
-    private AtomicBoolean sentReady;
-    private AtomicBoolean delivered;
-    private ConcurrentHashMap<Integer, String> echos;
-    private ConcurrentHashMap<Integer, String> readys;
+    private final Process myProcess;
+    private final Process[] peers;
+    private final Link link;
+    private final AtomicBoolean sentEcho;
+    private final AtomicBoolean sentReady;
+    private final AtomicBoolean delivered;
+    private final ConcurrentHashMap<Integer, String> echos;
+    private final ConcurrentHashMap<Integer, String> readys;
+    private final int byzantineProcesses;
 
-    public ReliableBroadcast(Process myProcess, Process[] peers) throws LinkException {
+    public ReliableBroadcast(Process myProcess, Process[] peers, Link link, int byzantineProcesses) throws LinkException {
         this.myProcess = myProcess;
         this.peers = peers;
         this.link = new Link(myProcess, peers, 200);
@@ -28,15 +29,16 @@ public class ReliableBroadcast implements AutoCloseable {
         this.delivered = new AtomicBoolean(false);
         this.echos = new ConcurrentHashMap<>();
         this.readys = new ConcurrentHashMap<>();
+        this.byzantineProcesses = byzantineProcesses;
     }
 
-    public void broadcast(SignedMessage message) throws LinkException {
+    public void broadcast(Message message) throws LinkException {
         int myId = myProcess.getId();
         String messageString = new Gson().toJson(message);
         // Send the message to myself
         link.send(myId, new Message(myId, myId, Message.Type.SEND, messageString));
         // Send the message to everybody else
-        for(Process process : peers) {
+        for (Process process : peers) {
             int processId = process.getId();
             link.send(process.getId(), new Message(myId, processId, Message.Type.SEND, messageString));
         }
@@ -44,13 +46,14 @@ public class ReliableBroadcast implements AutoCloseable {
 
     public Message collect() throws LinkException {
         int myId = myProcess.getId();
-        while(true) {
+        // Infinite loop to keep receiving messages until delivery can be done.
+        while (true) {
             Message message = link.receive();
             switch (message.getType()) {
                 case SEND -> {
                     if (sentEcho.get()) continue;
                     sentEcho.set(true);
-                    for (Process process: peers) {
+                    for (Process process : peers) {
                         int processId = process.getId();
                         link.send(
                                 process.getId(),
@@ -60,12 +63,12 @@ public class ReliableBroadcast implements AutoCloseable {
                 }
                 case ECHO -> {
                     echos.putIfAbsent(message.getSenderId(), message.getPayload());
-                    if(!sentEcho.get() &&
+                    if (!sentReady.get() &&
                             echos.values().stream()
                                     .filter(m -> m.equals(message.getPayload()))
-                                    .count() > 1) { // este 2
-                        sentEcho.set(true);
-                        for (Process process: peers) {
+                                    .count() > (Arrays.stream(peers).count() + 1 + byzantineProcesses) / 2) {
+                        sentReady.set(true);
+                        for (Process process : peers) {
                             int processId = process.getId();
                             link.send(
                                     process.getId(),
@@ -74,7 +77,28 @@ public class ReliableBroadcast implements AutoCloseable {
                         }
                     }
                 }
-                case READY -> readys.putIfAbsent(message.getSenderId(), message.getPayload());
+                case READY -> {
+                    readys.putIfAbsent(message.getSenderId(), message.getPayload());
+                    if (!sentReady.get() &&
+                            readys.values().stream()
+                                    .filter((m -> m.equals(message.getPayload())))
+                                    .count() > byzantineProcesses) {
+                        sentReady.set(true);
+                        for (Process process : peers) {
+                            int processId = process.getId();
+                            link.send(
+                                    process.getId(),
+                                    new Message(myId, processId, Message.Type.READY, message.getPayload())
+                            );
+                        }
+                    } else if(!delivered.get() &&
+                            readys.values().stream()
+                                    .filter((m -> m.equals(message.getPayload())))
+                                    .count() > 2L * byzantineProcesses) {
+                        delivered.set(true);
+                        return new Gson().fromJson(message.getPayload(), Message.class);
+                    }
+                }
             }
         }
     }

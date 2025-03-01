@@ -16,5 +16,6 @@ public class Process {
         this.host = host;
         this.port = port;
         this.clientPort = clientPort;
+        this.publicKeyPath = "src/main/java/consensus/util/keys/" + id + ".pubkey";
     }
 }

@@ -36,7 +36,7 @@ public class Link implements AutoCloseable {
     ExecutorService executorService = Executors.newFixedThreadPool(5);
     private final int baseSleepTime;
 
-    public Link(Process myProcess, Process[] peers, int baseSleepTime) throws LinkException {
+    public Link(Process myProcess, Process[] peers, int baseSleepTime) throws Exception {
         this.myProcess = myProcess;
         this.peers = new HashMap<>();
         this.baseSleepTime = baseSleepTime;
@@ -151,9 +151,12 @@ public class Link implements AutoCloseable {
                     InetAddress senderHost = packet.getAddress();
                     int senderPort = packet.getPort();
                     // Responding with an ACK to the sender
-                    Message response = new Message(myProcess.getId(), message.getSenderId(), Message.Type.ACK);
-                    response.setMessageId(messageId);
-                    unreliableSend(senderHost, senderPort, response);
+                    SignedMessage signedResponse = new SignedMessage(
+                            myProcess.getId(), message.getSenderId(), Message.Type.ACK,
+                            keyService.loadPrivateKey("p" + myProcess.getId())
+                    );
+                    signedResponse.setMessageId(messageId);
+                    unreliableSend(senderHost, senderPort, signedResponse);
                     logger.info("{}: ACK sent to node {}", message.getMessageId(), senderId);
                 }
                 return message;
