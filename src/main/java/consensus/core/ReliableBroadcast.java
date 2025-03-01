@@ -48,6 +48,50 @@ public class ReliableBroadcast {
         }
     }
 
+    private void sendEcho(int myId, Message message) throws LinkException {
+        if (sentEcho.get()) return;
+        logger.info("P{}: Echoing message with id {}", myProcess.getId(), message.getMessageId());
+        sentEcho.set(true);
+        link.send(
+                myId,
+                new Message(myId, myId, Message.Type.ECHO, message.getPayload())
+        );
+        for (Process process : peers) {
+            int processId = process.getId();
+            link.send(
+                    process.getId(),
+                    new Message(myId, processId, Message.Type.ECHO, message.getPayload())
+            );
+        }
+    }
+
+    private void sendReady(
+            int myId,
+            Message message,
+            ConcurrentHashMap<Integer, String> processMessages,
+            int sendThreshold
+    ) throws LinkException {
+        processMessages.putIfAbsent(message.getSenderId(), message.getPayload());
+        if (!sentReady.get() &&
+                processMessages.values().stream()
+                        .filter((m -> m.equals(message.getPayload())))
+                        .count() > sendThreshold) {
+            sentReady.set(true);
+            logger.info("P{}: Readying message with id {}", myProcess.getId(), message.getMessageId());
+            link.send(
+                    myId,
+                    new Message(myId, myId, Message.Type.READY, message.getPayload())
+            );
+            for (Process process : peers) {
+                int processId = process.getId();
+                link.send(
+                        process.getId(),
+                        new Message(myId, processId, Message.Type.READY, message.getPayload())
+                );
+            }
+        }
+    }
+
     public Message collect() throws LinkException {
         int myId = myProcess.getId();
         // Infinite loop to keep receiving messages until delivery can be done.

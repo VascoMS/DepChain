@@ -70,7 +70,7 @@ public class Link implements AutoCloseable {
 
         if(nodeId == myProcess.getId()) {
             localMessages.add(signedMessage);
-            logger.info("{}: Message {} added to local messages", message.getMessageId(), myProcess.getId());
+            logger.info("P{}: Message {} {} added to local messages", myProcess.getId(), message.getType(), message.getMessageId());
             return;
         }
 
@@ -84,14 +84,14 @@ public class Link implements AutoCloseable {
                 InetAddress nodeHost = InetAddress.getByName(node.getHost());
                 int nodePort = node.getPort();
                 int sleepTime = baseSleepTime;
-                for(int attempts = 1; !acksList.contains(message.getMessageId()); attempts++){
-                    logger.info("{}: Sending message {} to node {} attempt {}", message.getMessageId(),
-                            myProcess.getId(), nodeId, attempts);
+                for(int attempts = 1; attempts != 5 && !acksList.contains(message.getMessageId()); attempts++){
+                    logger.info("P{}: Sending message {} {} to node P{} attempt {}",
+                            myProcess.getId(), message.getType(), message.getMessageId(), nodeId, attempts);
                     unreliableSend(nodeHost, nodePort, signedMessage);
                     Thread.sleep(sleepTime);
                     sleepTime *= 2;
                 }
-                logger.info("{}: Message {} sent to node {}", message.getMessageId(), myProcess.getId(), nodeId);
+                logger.info("P{}: Message {} {} sent to node P{}", myProcess.getId(), message.getType(), message.getMessageId(), nodeId);
             } catch (Exception e){
                 logger.error(ErrorMessages.SendingError.getMessage(), e);
             }
@@ -109,6 +109,13 @@ public class Link implements AutoCloseable {
         }
     }
 
+    private DatagramPacket listenOnSocket() throws IOException{
+        byte[] buf = new byte[65535];
+        DatagramPacket packet = new DatagramPacket(buf, buf.length);
+        socket.receive(packet);
+        return packet;
+    }
+
     public Message receive() throws LinkException {
         if(socket.isClosed()) {
             throw new LinkException(ErrorMessages.LinkClosedException);
@@ -121,39 +128,39 @@ public class Link implements AutoCloseable {
                 boolean messageIsAuthentic = SecurityUtil.verifySignature(message, peerPublicKey);
                 if(messageIsAuthentic) {
                     acksList.add(message.getMessageId());
-                    logger.info("{}: Message received from self.", message.getMessageId());
+                    logger.info("P{}: Message {} {} received from self.", myProcess.getId(), message.getType(), message.getMessageId());
                 }
             } else {
-                byte[] buf = new byte[65535];
-                DatagramPacket packet = new DatagramPacket(buf, buf.length);
-                socket.receive(packet);
+                do {
+                    DatagramPacket packet = listenOnSocket();
+                    byte[] buffer = Arrays.copyOfRange(packet.getData(), 0, packet.getLength());
+                    message = new Gson().fromJson(new String(buffer), SignedMessage.class);
+                    int senderId = message.getSenderId();
+                    int messageId = message.getMessageId();
+                    PublicKey peerPublicKey = keyService.loadPublicKey("p" + message.getSenderId());
+                    boolean messageIsAuthentic = SecurityUtil.verifySignature(message, peerPublicKey);
+                    if(!messageIsAuthentic) {
+                        logger.error("P{}: Message {} received from node P{} is not authentic.",myProcess.getId(), message.getMessageId(), message.getSenderId());
+                        return null;
+                    }
+                    if(message.getType() == Message.Type.ACK){
+                        acksList.add(message.getMessageId());
+                        logger.info("P{}: ACK {} received from node P{}",myProcess.getId(), message.getMessageId(), senderId);
+                    } else {
+                        logger.info("P{}: Message {} {} received from node P{}.", myProcess.getId(), message.getType(), message.getMessageId(), senderId);
+                        InetAddress senderHost = packet.getAddress();
+                        int senderPort = packet.getPort();
+                        // Responding with an ACK to the sender
+                        SignedMessage signedResponse = new SignedMessage(
+                                myProcess.getId(), message.getSenderId(), Message.Type.ACK,
+                                keyService.loadPrivateKey("p" + myProcess.getId())
+                        );
+                        signedResponse.setMessageId(messageId);
+                        unreliableSend(senderHost, senderPort, signedResponse);
+                        logger.info("P{}: ACK {} sent to node P{}",myProcess.getId(), message.getMessageId(), senderId);
+                        }
+                } while(message.getType() == Message.Type.ACK);
 
-                byte[] buffer = Arrays.copyOfRange(packet.getData(), 0, packet.getLength());
-                message = new Gson().fromJson(new String(buffer), SignedMessage.class);
-                PublicKey peerPublicKey = keyService.loadPublicKey("p" + message.getSenderId());
-                boolean messageIsAuthentic = SecurityUtil.verifySignature(message, peerPublicKey);
-                if(!messageIsAuthentic) {
-                    logger.error("{}: Message received from node {} is not authentic.", message.getMessageId(), message.getSenderId());
-                    return null;
-                }
-                int senderId = message.getSenderId();
-                int messageId = message.getMessageId();
-                logger.info("{}: Message received from node {}.", message.getMessageId(), senderId);
-                if(message.getType() == Message.Type.ACK) {
-                    acksList.add(messageId);
-                    logger.info("{}: ACK received from node {}", message.getMessageId(), senderId);
-                } else {
-                    InetAddress senderHost = packet.getAddress();
-                    int senderPort = packet.getPort();
-                    // Responding with an ACK to the sender
-                    SignedMessage signedResponse = new SignedMessage(
-                            myProcess.getId(), message.getSenderId(), Message.Type.ACK,
-                            keyService.loadPrivateKey("p" + myProcess.getId())
-                    );
-                    signedResponse.setMessageId(messageId);
-                    unreliableSend(senderHost, senderPort, signedResponse);
-                    logger.info("{}: ACK sent to node {}", message.getMessageId(), senderId);
-                }
                 return message;
             }
             return message;
