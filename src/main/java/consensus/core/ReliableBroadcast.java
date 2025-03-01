@@ -8,7 +8,7 @@ import java.util.Arrays;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class ReliableBroadcast implements AutoCloseable {
+public class ReliableBroadcast {
 
     private final Process myProcess;
     private final Process[] peers;
@@ -23,7 +23,7 @@ public class ReliableBroadcast implements AutoCloseable {
     public ReliableBroadcast(Process myProcess, Process[] peers, Link link, int byzantineProcesses) throws LinkException {
         this.myProcess = myProcess;
         this.peers = peers;
-        this.link = new Link(myProcess, peers, 200);
+        this.link = link;
         this.sentEcho = new AtomicBoolean(false);
         this.sentReady = new AtomicBoolean(false);
         this.delivered = new AtomicBoolean(false);
@@ -49,6 +49,7 @@ public class ReliableBroadcast implements AutoCloseable {
         // Infinite loop to keep receiving messages until delivery can be done.
         while (true) {
             Message message = link.receive();
+            if(message == null) continue;
             switch (message.getType()) {
                 case SEND -> {
                     if (sentEcho.get()) continue;
@@ -101,10 +102,5 @@ public class ReliableBroadcast implements AutoCloseable {
                 }
             }
         }
-    }
-
-    @Override
-    public void close() {
-        link.close();
     }
 }

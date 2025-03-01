@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.io.Serializable;
+import java.util.Objects;
 
 @Getter
 public class Message implements Serializable {
@@ -29,5 +30,23 @@ public class Message implements Serializable {
         this.senderId = senderId;
         this.destinationId = destinationId;
         this.type = type;
+        this.payload = null;
+    }
+
+    public Message(int senderId, Type type, String payload) {
+        this.senderId = senderId;
+        this.destinationId = -1;
+        this.type = type;
+        this.payload = payload;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        if(!(other instanceof Message)) return false;
+        return this.getMessageId() == ((Message) other).getMessageId() &&
+                this.getSenderId() == ((Message) other).getSenderId() &&
+                this.getDestinationId() == ((Message) other).getDestinationId() &&
+                this.getType() == ((Message) other).getType() &&
+                Objects.equals(this.getPayload(), ((Message) other).getPayload());
     }
 }

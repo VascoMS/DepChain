@@ -8,7 +8,7 @@ import java.security.PublicKey;
 
 @Getter
 public class SignedMessage extends Message {
-    private final byte[] signature;
+    private final String signature;
 
     public SignedMessage(int senderId, int destinationId, Type type, String payload, PrivateKey privateKey) throws Exception{
         super(senderId, destinationId, type, payload);
@@ -22,7 +22,4 @@ public class SignedMessage extends Message {
     }
 
 
-    public byte[] getSignature() {
-        return signature;
-    }
 }

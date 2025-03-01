@@ -20,7 +20,7 @@ public class LinkTest {
     private static Link bobLink;
 
     @BeforeAll
-    public static void startLinks() throws LinkException {
+    public static void startLinks() throws Exception {
         // Assemble
         aliceProcess = new Process(1, "localhost", 1024, 1024);
         bobProcess = new Process(2, "localhost", 1025, 1025);
@@ -95,7 +95,7 @@ public class LinkTest {
     }
 
     @Test
-    public void noSendOrReceiveAfterClose() throws LinkException {
+    public void noSendOrReceiveAfterClose() throws Exception {
         Process process = new Process(999, "localhost", 1030, 1030);
         Link link = new Link(process, new Process[] {aliceProcess, bobProcess}, 200);
         link.close();
@@ -111,7 +111,7 @@ public class LinkTest {
         );
         assertThrows(
                 LinkException.class,
-                () -> { link.receive(); },
+                link::receive,
                 ErrorMessages.LinkClosedException.getMessage()
         );
     }

@@ -40,7 +40,7 @@ public class Link implements AutoCloseable {
         this.myProcess = myProcess;
         this.peers = new HashMap<>();
         this.baseSleepTime = baseSleepTime;
-        this.privateKeyPath = "../util/keys/" + myProcess.getId() + ".pem";
+        this.keyService = new KeyService(SecurityUtil.KEYSTORE_PATH, "mypass");
 
         for (Process p : peers) {
             this.peers.put(p.getId(), p);
@@ -61,7 +61,7 @@ public class Link implements AutoCloseable {
         }
         SignedMessage signedMessage;
         try {
-            signedMessage = new SignedMessage(message, loadNodePrivateKey());
+            signedMessage = new SignedMessage(message, keyService.loadPrivateKey("p" + myProcess.getId()));
 
         } catch (Exception e) {
             throw new LinkException(ErrorMessages.SignatureError, e);
@@ -87,7 +87,7 @@ public class Link implements AutoCloseable {
                 for(int attempts = 1; !acksList.contains(message.getMessageId()); attempts++){
                     logger.info("{}: Sending message {} to node {} attempt {}", message.getMessageId(),
                             myProcess.getId(), nodeId, attempts);
-                    unreliableSend(nodeHost, nodePort, message);
+                    unreliableSend(nodeHost, nodePort, signedMessage);
                     Thread.sleep(sleepTime);
                     sleepTime *= 2;
                 }
@@ -107,7 +107,7 @@ public class Link implements AutoCloseable {
         }
     }
 
-    private void unreliableSend(InetAddress host, int port, Message message) {
+    private void unreliableSend(InetAddress host, int port, SignedMessage message) {
         try {
             // Sign the message to make sure link is authenticated
             byte[] bytes = new Gson().toJson(message).getBytes();
@@ -126,8 +126,12 @@ public class Link implements AutoCloseable {
             SignedMessage message;
             if(!localMessages.isEmpty()) {
                 message = localMessages.poll();
-                acksList.add(message.getMessageId());
-                logger.info("{}: Message received from self.", message.getMessageId());
+                PublicKey peerPublicKey = keyService.loadPublicKey("p" + myProcess.getId());
+                boolean messageIsAuthentic = SecurityUtil.verifySignature(message, peerPublicKey);
+                if(messageIsAuthentic) {
+                    acksList.add(message.getMessageId());
+                    logger.info("{}: Message received from self.", message.getMessageId());
+                }
             } else {
                 byte[] buf = new byte[65535];
                 DatagramPacket packet = new DatagramPacket(buf, buf.length);
@@ -135,7 +139,7 @@ public class Link implements AutoCloseable {
 
                 byte[] buffer = Arrays.copyOfRange(packet.getData(), 0, packet.getLength());
                 message = new Gson().fromJson(new String(buffer), SignedMessage.class);
-                PublicKey peerPublicKey = SecurityUtil.loadPublicKey(peers.get(message.getSenderId()).getPublicKeyPath());
+                PublicKey peerPublicKey = keyService.loadPublicKey("p" + message.getSenderId());
                 boolean messageIsAuthentic = SecurityUtil.verifySignature(message, peerPublicKey);
                 if(!messageIsAuthentic) {
                     logger.error("{}: Message received from node {} is not authentic.", message.getMessageId(), message.getSenderId());
