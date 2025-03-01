@@ -3,6 +3,8 @@ package consensus.core;
 import com.google.gson.Gson;
 import consensus.util.Process;
 import consensus.exception.LinkException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
 import java.util.concurrent.ConcurrentHashMap;
@@ -10,6 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ReliableBroadcast {
 
+    private static final Logger logger = LoggerFactory.getLogger(ReliableBroadcast.class);
     private final Process myProcess;
     private final Process[] peers;
     private final Link link;
@@ -35,6 +38,7 @@ public class ReliableBroadcast {
     public void broadcast(Message message) throws LinkException {
         int myId = myProcess.getId();
         String messageString = new Gson().toJson(message);
+        logger.info("P{}: Broadcasting message with id {}", myProcess.getId(), message.getMessageId());
         // Send the message to myself
         link.send(myId, new Message(myId, myId, Message.Type.SEND, messageString));
         // Send the message to everybody else
@@ -52,51 +56,19 @@ public class ReliableBroadcast {
             if (message == null) continue;
             switch (message.getType()) {
                 case SEND -> {
-                    if (sentEcho.get()) continue;
-                    sentEcho.set(true);
-                    for (Process process : peers) {
-                        int processId = process.getId();
-                        link.send(
-                                process.getId(),
-                                new Message(myId, processId, Message.Type.ECHO, message.getPayload())
-                        );
-                    }
+                    sendEcho(myId, message);
                 }
                 case ECHO -> {
-                    echos.putIfAbsent(message.getSenderId(), message.getPayload());
-                    if (!sentReady.get() &&
-                            echos.values().stream()
-                                    .filter(m -> m.equals(message.getPayload()))
-                                    .count() > (Arrays.stream(peers).count() + 1 + byzantineProcesses) / 2) {
-                        sentReady.set(true);
-                        for (Process process : peers) {
-                            int processId = process.getId();
-                            link.send(
-                                    process.getId(),
-                                    new Message(myId, processId, Message.Type.READY, message.getPayload())
-                            );
-                        }
-                    }
+                    sendReady(myId, message, echos, (int) ((Arrays.stream(peers).count() + 1) / 2));
                 }
                 case READY -> {
-                    readys.putIfAbsent(message.getSenderId(), message.getPayload());
-                    if (!sentReady.get() &&
-                            readys.values().stream()
-                                    .filter((m -> m.equals(message.getPayload())))
-                                    .count() > byzantineProcesses) {
-                        sentReady.set(true);
-                        for (Process process : peers) {
-                            int processId = process.getId();
-                            link.send(
-                                    process.getId(),
-                                    new Message(myId, processId, Message.Type.READY, message.getPayload())
-                            );
-                        }
-                    } else if(!delivered.get() &&
+                    sendReady(myId, message, readys, byzantineProcesses);
+                    if (!delivered.get() &&
                             readys.values().stream()
                                     .filter((m -> m.equals(message.getPayload())))
                                     .count() > 2L * byzantineProcesses) {
                         delivered.set(true);
+                        logger.info("P{}: Delivering message with id {}", myProcess.getId(), message.getMessageId());
                         return new Gson().fromJson(message.getPayload(), Message.class);
                     }
                 }

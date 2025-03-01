@@ -2,7 +2,10 @@ package consensus.core;
 
 import consensus.exception.LinkException;
 import consensus.util.Process;
+import lombok.SneakyThrows;
 import org.junit.jupiter.api.*;
+
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -88,21 +91,58 @@ public class ReliableBroadcastTest {
     }
 
     @Test
-    public void simpleBroadcast() throws LinkException {
+    public void simpleBroadcast() throws Exception {
         // Assemble
+        ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
+        ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
+        ConcurrentLinkedQueue<Thread> threads = new ConcurrentLinkedQueue<>();
+
         Message aliceMessage = new Message(1, Message.Type.WRITE, "hello.");
+
+        // Assert
+        for(ReliableBroadcast broadcast :
+                new ReliableBroadcast[]{aliceBroadcast, bobBroadcast, carlBroadcast, jeffBroadcast}) {
+            threads.add(new Thread(() -> {
+                try {
+                    assertEquals(aliceMessage, broadcast.collect());
+                } catch (Throwable e) {
+                    if(e instanceof AssertionError) {
+                        failures.add((AssertionError) e);
+                    } else if(e instanceof Exception) {
+                        errors.add((Exception) e);
+                    }
+                }
+            }));
+        }
+        threads.forEach(Thread::start);
+
         // Act
         aliceBroadcast.broadcast(aliceMessage);
-        // Assert
-        assertEquals(aliceMessage, aliceBroadcast.collect());
-        assertEquals(aliceMessage, bobBroadcast.collect());
-        assertEquals(aliceMessage, carlBroadcast.collect());
-        assertEquals(aliceMessage, jeffBroadcast.collect());
+
+        threads.forEach(thread -> {
+            try {
+                thread.join();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        if(!failures.isEmpty()) {
+            throw failures.peek();
+        }
+
+        if(!errors.isEmpty()) {
+            throw errors.peek();
+        }
     }
 
     @Test
-    public void excludedOneByzantineBroadcast() throws LinkException {
+    public void excludedOneByzantineBroadcast() throws Exception {
         // Assemble
+        ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
+        ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
+        ConcurrentLinkedQueue<Thread> threads = new ConcurrentLinkedQueue<>();
+
         Message byzantineMessage = new Message(4, Message.Type.SEND, "ha. ha.");
 
         // Act
@@ -112,15 +152,45 @@ public class ReliableBroadcastTest {
         jeffLink.send(4, byzantineMessage);
 
         // Assert
-        assertEquals(byzantineMessage, aliceBroadcast.collect());
-        assertEquals(byzantineMessage, bobBroadcast.collect());
-        assertEquals(byzantineMessage, carlBroadcast.collect());
-        assertEquals(byzantineMessage, jeffBroadcast.collect());
+        for(ReliableBroadcast broadcast :
+                new ReliableBroadcast[]{aliceBroadcast, bobBroadcast, carlBroadcast, jeffBroadcast}) {
+            threads.add(new Thread(() -> {
+                try {
+                    assertEquals(byzantineMessage, broadcast.collect());
+                } catch (Throwable e) {
+                    if(e instanceof AssertionError) {
+                        failures.add((AssertionError) e);
+                    } else if(e instanceof Exception) {
+                        errors.add((Exception) e);
+                    }
+                }
+            }));
+        }
+        threads.forEach(Thread::start);
+        threads.forEach(thread -> {
+            try {
+                thread.join();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        if(!failures.isEmpty()) {
+            throw failures.peek();
+        }
+
+        if(!errors.isEmpty()) {
+            throw errors.peek();
+        }
     }
 
     @Test
-    public void differentMessagesByzantineBroadcast() throws LinkException {
+    public void differentMessagesByzantineBroadcast() throws Exception {
         // Assemble
+        ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
+        ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
+        ConcurrentLinkedQueue<Thread> threads = new ConcurrentLinkedQueue<>();
+
         Message normalMessage = new Message(4, Message.Type.SEND, "smiley face.");
         Message byzantineMessage = new Message(4, Message.Type.SEND, "ha. ha.");
 
@@ -132,10 +202,36 @@ public class ReliableBroadcastTest {
         jeffLink.send(4, normalMessage);
 
         // Assert
-        assertEquals(normalMessage, aliceBroadcast.collect());
-        assertEquals(normalMessage, bobBroadcast.collect());
-        assertEquals(normalMessage, carlBroadcast.collect());
-        assertEquals(normalMessage, jeffBroadcast.collect());
+        for(ReliableBroadcast broadcast :
+                new ReliableBroadcast[]{aliceBroadcast, bobBroadcast, carlBroadcast, jeffBroadcast}) {
+            threads.add(new Thread(() -> {
+                try {
+                    assertEquals(normalMessage, broadcast.collect());
+                } catch (Throwable e) {
+                    if(e instanceof AssertionError) {
+                        failures.add((AssertionError) e);
+                    } else if(e instanceof Exception) {
+                        errors.add((Exception) e);
+                    }
+                }
+            }));
+        }
+        threads.forEach(Thread::start);
+        threads.forEach(thread -> {
+            try {
+                thread.join();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        if(!failures.isEmpty()) {
+            throw failures.peek();
+        }
+
+        if(!errors.isEmpty()) {
+            throw errors.peek();
+        }
     }
 
     @AfterAll
