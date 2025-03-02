@@ -1,13 +1,18 @@
 package consensus.core;
 
+import consensus.core.model.Message;
+import consensus.core.primitives.Link;
 import consensus.exception.ErrorMessages;
 import consensus.exception.LinkException;
+import consensus.util.Observer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import consensus.util.Process;
 
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -30,54 +35,37 @@ public class LinkTest {
     }
 
     @Test
-    public void simpleSendAndReceive() throws LinkException {
+    public void simpleSendAndReceive() throws Exception {
 
-        // Act
-        aliceLink.send(2, new Message(1, 2, Message.Type.RECEIVE, "hello"));
+        CountDownLatch latch = new CountDownLatch(1);
+        ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
 
-        // Assert
-        Message bobMessage = bobLink.receive();
-        assertEquals(1, bobMessage.getSenderId());
-        assertEquals(Message.Type.RECEIVE, bobMessage.getType());
-
-        Message aliceMessage = aliceLink.receive();
-        assertEquals(2, aliceMessage.getSenderId());
-        assertEquals(Message.Type.ACK, aliceMessage.getType());
-
-        assertEquals(bobMessage.getMessageId(), aliceMessage.getMessageId());
-    }
-
-    @Test
-    public void sendToSelf() throws LinkException, InterruptedException {
-        // Assemble
-        AtomicBoolean fail = new AtomicBoolean(false);
-
-        // Act
-        aliceLink.send(1, new Message(1, 1, Message.Type.RECEIVE, "hello"));
+        Message aliceMessage = new Message(1, 2, Message.Type.RECEIVE, "hello");
 
         // Assert
-        Message aliceMessage = aliceLink.receive();
-        assertEquals(1, aliceMessage.getSenderId());
-        assertEquals(Message.Type.RECEIVE, aliceMessage.getType());
+        Observer bobObserver = new Observer() {
+            @Override
+            public void update(Message message) {
+                try {
+                    System.out.println("Received message.");
+                    // Assert
+                    assertEquals(message, aliceMessage);
+                    latch.countDown();
+                } catch(AssertionError failure) {
+                    failures.add(failure);
+                }
 
-        // Act
-        Thread listeningThread = new Thread(() -> {
-            try {
-                aliceLink.receive();
-                fail.set(true);
-            } catch (LinkException e) {
-                throw new RuntimeException(e);
             }
-        });
+        };
 
-        listeningThread.start();
-        Thread.sleep(3000);
-        listeningThread.interrupt();
+        bobLink.addObserver(bobObserver);
+        aliceLink.send(2, aliceMessage);
+        latch.await();
 
-        // Assert
-        if (fail.get()) {
-            fail();
+        if(!failures.isEmpty()) {
+            throw failures.peek();
         }
+
     }
 
     @Test
@@ -107,11 +95,6 @@ public class LinkTest {
                         Message.Type.RECEIVE,
                         "hello"
                 ));},
-                ErrorMessages.LinkClosedException.getMessage()
-        );
-        assertThrows(
-                LinkException.class,
-                link::receive,
                 ErrorMessages.LinkClosedException.getMessage()
         );
     }

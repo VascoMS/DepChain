@@ -1,4 +1,4 @@
-package consensus.core;
+package consensus.core.model;
 
 import lombok.Getter;
 import lombok.Setter;

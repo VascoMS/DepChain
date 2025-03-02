@@ -1,17 +1,12 @@
 package consensus.util;
 
-import consensus.core.Message;
-import consensus.core.SignedMessage;
+import consensus.core.model.Message;
+import consensus.core.model.SignedMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.ByteBuffer;
 import java.security.*;
-import java.security.spec.InvalidKeySpecException;
-import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.Base64;
 
 public class SecurityUtil {

@@ -1,8 +1,9 @@
 package consensus.core;
 
-import consensus.exception.LinkException;
+import consensus.core.model.Message;
+import consensus.core.primitives.BroadcastBroker;
+import consensus.core.primitives.Link;
 import consensus.util.Process;
-import lombok.SneakyThrows;
 import org.junit.jupiter.api.*;
 
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -11,28 +12,23 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class ReliableBroadcastTest {
 
-    private static Process aliceProcess;
-    private static Process bobProcess;
-    private static Process carlProcess;
-    private static Process jeffProcess;
-
     private static Link aliceLink;
     private static Link bobLink;
     private static Link carlLink;
     private static Link jeffLink;
 
-    private static ReliableBroadcast aliceBroadcast;
-    private static ReliableBroadcast bobBroadcast;
-    private static ReliableBroadcast carlBroadcast;
-    private static ReliableBroadcast jeffBroadcast;
+    private static BroadcastBroker aliceBroadcast;
+    private static BroadcastBroker bobBroadcast;
+    private static BroadcastBroker carlBroadcast;
+    private static BroadcastBroker jeffBroadcast;
 
     @BeforeAll
     public static void startLinks() throws Exception {
         // Assemble
-        aliceProcess = new Process(1, "localhost", 1024, 1024);
-        bobProcess = new Process(2, "localhost", 1025, 1025);
-        carlProcess = new Process(3, "localhost", 1026, 1026);
-        jeffProcess = new Process(4, "localhost", 1027, 1027);
+        Process aliceProcess = new Process(1, "localhost", 1024, 1024);
+        Process bobProcess = new Process(2, "localhost", 1025, 1025);
+        Process carlProcess = new Process(3, "localhost", 1026, 1026);
+        Process jeffProcess = new Process(4, "localhost", 1027, 1027);
 
         aliceLink = new Link(
                 aliceProcess,
@@ -57,32 +53,29 @@ public class ReliableBroadcastTest {
                 new Process[]{bobProcess, carlProcess, aliceProcess},
                 200
         );
-    }
 
-    @BeforeEach
-    public void startBroadcast() throws LinkException {
-        aliceBroadcast = new ReliableBroadcast(
+        aliceBroadcast = new BroadcastBroker(
                 aliceProcess,
                 new Process[]{bobProcess, carlProcess, jeffProcess},
                 aliceLink,
                 1
         );
 
-        bobBroadcast = new ReliableBroadcast(
+        bobBroadcast = new BroadcastBroker(
                 bobProcess,
                 new Process[]{aliceProcess, carlProcess, jeffProcess},
                 bobLink,
                 1
         );
 
-        carlBroadcast = new ReliableBroadcast(
+        carlBroadcast = new BroadcastBroker(
                 carlProcess,
                 new Process[]{bobProcess, aliceProcess, jeffProcess},
                 carlLink,
                 1
         );
 
-        jeffBroadcast = new ReliableBroadcast(
+        jeffBroadcast = new BroadcastBroker(
                 jeffProcess,
                 new Process[]{bobProcess, carlProcess, aliceProcess},
                 jeffLink,
@@ -100,11 +93,11 @@ public class ReliableBroadcastTest {
         Message aliceMessage = new Message(1, Message.Type.WRITE, "hello.");
 
         // Assert
-        for(ReliableBroadcast broadcast :
-                new ReliableBroadcast[]{aliceBroadcast, bobBroadcast, carlBroadcast, jeffBroadcast}) {
+        for(BroadcastBroker broadcast :
+                new BroadcastBroker[]{aliceBroadcast, bobBroadcast, carlBroadcast, jeffBroadcast}) {
             threads.add(new Thread(() -> {
                 try {
-                    assertEquals(aliceMessage, broadcast.collect());
+                    assertEquals(aliceMessage, broadcast.receiveMessage());
                 } catch (Throwable e) {
                     if(e instanceof AssertionError) {
                         failures.add((AssertionError) e);
@@ -145,18 +138,12 @@ public class ReliableBroadcastTest {
 
         Message byzantineMessage = new Message(4, Message.Type.SEND, "ha. ha.");
 
-        // Act
-        // Only sending to Alice and Bob, Carl doesn't get sent the message.
-        jeffLink.send(1, byzantineMessage);
-        jeffLink.send(2, byzantineMessage);
-        jeffLink.send(4, byzantineMessage);
-
-        // Assert
-        for(ReliableBroadcast broadcast :
-                new ReliableBroadcast[]{aliceBroadcast, bobBroadcast, carlBroadcast, jeffBroadcast}) {
+        for(BroadcastBroker broadcast :
+                new BroadcastBroker[]{aliceBroadcast, bobBroadcast, carlBroadcast, jeffBroadcast}) {
             threads.add(new Thread(() -> {
                 try {
-                    assertEquals(byzantineMessage, broadcast.collect());
+                    // Assert
+                    assertEquals(byzantineMessage, broadcast.receiveMessage());
                 } catch (Throwable e) {
                     if(e instanceof AssertionError) {
                         failures.add((AssertionError) e);
@@ -167,6 +154,13 @@ public class ReliableBroadcastTest {
             }));
         }
         threads.forEach(Thread::start);
+
+        // Act
+        // Only sending to Alice and Bob, Carl doesn't get sent the message.
+        jeffLink.send(1, byzantineMessage);
+        jeffLink.send(2, byzantineMessage);
+        jeffLink.send(4, byzantineMessage);
+
         threads.forEach(thread -> {
             try {
                 thread.join();
@@ -194,19 +188,12 @@ public class ReliableBroadcastTest {
         Message normalMessage = new Message(4, Message.Type.SEND, "smiley face.");
         Message byzantineMessage = new Message(4, Message.Type.SEND, "ha. ha.");
 
-        // Act
-        // Sending normalMessage to Alice and Bob, but Carl gets sent another message.
-        jeffLink.send(1, normalMessage);
-        jeffLink.send(2, normalMessage);
-        jeffLink.send(3, byzantineMessage);
-        jeffLink.send(4, normalMessage);
-
-        // Assert
-        for(ReliableBroadcast broadcast :
-                new ReliableBroadcast[]{aliceBroadcast, bobBroadcast, carlBroadcast, jeffBroadcast}) {
+        for(BroadcastBroker broadcast :
+                new BroadcastBroker[]{aliceBroadcast, bobBroadcast, carlBroadcast, jeffBroadcast}) {
             threads.add(new Thread(() -> {
                 try {
-                    assertEquals(normalMessage, broadcast.collect());
+                    // Assert
+                    assertEquals(normalMessage, broadcast.receiveMessage());
                 } catch (Throwable e) {
                     if(e instanceof AssertionError) {
                         failures.add((AssertionError) e);
@@ -217,6 +204,14 @@ public class ReliableBroadcastTest {
             }));
         }
         threads.forEach(Thread::start);
+
+        // Act
+        // Sending normalMessage to Alice and Bob, but Carl gets sent another message.
+        jeffLink.send(1, normalMessage);
+        jeffLink.send(2, normalMessage);
+        jeffLink.send(3, byzantineMessage);
+        jeffLink.send(4, normalMessage);
+
         threads.forEach(thread -> {
             try {
                 thread.join();

@@ -1,6 +1,7 @@
-package consensus.core;
+package consensus.core.primitives;
 
 import com.google.gson.Gson;
+import consensus.core.model.Message;
 import consensus.util.Process;
 import consensus.exception.LinkException;
 import org.slf4j.Logger;
@@ -13,6 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class ReliableBroadcast {
 
     private static final Logger logger = LoggerFactory.getLogger(ReliableBroadcast.class);
+    private final BroadcastBroker broker;
     private final Process myProcess;
     private final Process[] peers;
     private final Link link;
@@ -23,7 +25,8 @@ public class ReliableBroadcast {
     private final ConcurrentHashMap<Integer, String> readys;
     private final int byzantineProcesses;
 
-    public ReliableBroadcast(Process myProcess, Process[] peers, Link link, int byzantineProcesses) throws LinkException {
+    public ReliableBroadcast(BroadcastBroker broker, Process myProcess, Process[] peers, Link link, int byzantineProcesses) {
+        this.broker = broker;
         this.myProcess = myProcess;
         this.peers = peers;
         this.link = link;
@@ -33,19 +36,6 @@ public class ReliableBroadcast {
         this.echos = new ConcurrentHashMap<>();
         this.readys = new ConcurrentHashMap<>();
         this.byzantineProcesses = byzantineProcesses;
-    }
-
-    public void broadcast(Message message) throws LinkException {
-        int myId = myProcess.getId();
-        String messageString = new Gson().toJson(message);
-        logger.info("P{}: Broadcasting message with id {}", myProcess.getId(), message.getMessageId());
-        // Send the message to myself
-        link.send(myId, new Message(myId, myId, Message.Type.SEND, messageString));
-        // Send the message to everybody else
-        for (Process process : peers) {
-            int processId = process.getId();
-            link.send(process.getId(), new Message(myId, processId, Message.Type.SEND, messageString));
-        }
     }
 
     private void sendEcho(int myId, Message message) throws LinkException {
@@ -92,19 +82,15 @@ public class ReliableBroadcast {
         }
     }
 
-    public Message collect() throws LinkException {
+    public Message collect(String broadcastId) throws LinkException {
         int myId = myProcess.getId();
         // Infinite loop to keep receiving messages until delivery can be done.
-        while (true) {
-            Message message = link.receive();
+        while(true) {
+            BroadcastMessage message = broker.receiveBroadcastMessage(broadcastId);
             if (message == null) continue;
             switch (message.getType()) {
-                case SEND -> {
-                    sendEcho(myId, message);
-                }
-                case ECHO -> {
-                    sendReady(myId, message, echos, (int) ((Arrays.stream(peers).count() + 1) / 2));
-                }
+                case SEND -> sendEcho(myId, message);
+                case ECHO -> sendReady(myId, message, echos, (int) ((Arrays.stream(peers).count() + 1) / 2));
                 case READY -> {
                     sendReady(myId, message, readys, byzantineProcesses);
                     if (!delivered.get() &&

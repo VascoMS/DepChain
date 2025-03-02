@@ -1,10 +1,10 @@
-package consensus.core;
+package consensus.core.model;
 
+import consensus.core.model.Message;
 import consensus.util.SecurityUtil;
 import lombok.Getter;
 
 import java.security.PrivateKey;
-import java.security.PublicKey;
 
 @Getter
 public class SignedMessage extends Message {
@@ -25,6 +25,4 @@ public class SignedMessage extends Message {
         this.setMessageId(message.getMessageId()); // Copy the message ID
         this.signature = SecurityUtil.signMessage(this, privateKey);
     }
-
-
 }
