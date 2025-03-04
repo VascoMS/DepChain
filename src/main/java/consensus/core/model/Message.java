@@ -1,5 +1,6 @@
 package consensus.core.model;
 
+import com.google.gson.Gson;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -9,6 +10,7 @@ import java.util.Objects;
 @Getter
 public class Message implements Serializable {
     private final int senderId;
+    @Setter
     private final int destinationId;
     @Setter
     private int messageId;
@@ -16,7 +18,7 @@ public class Message implements Serializable {
     private final String payload;
 
     public enum Type {
-        ACK, WRITE, RECEIVE, SEND, ECHO, READY
+        ACK, UNICAST, BROADCAST
     }
 
     public Message(int senderId, int destinationId, Type type, String payload) {

@@ -15,8 +15,9 @@ public class SignedMessage extends Message {
         this.signature = SecurityUtil.signMessage(this, privateKey);
     }
 
-    public SignedMessage(int senderId, int destinationId, Type type, PrivateKey privateKey) throws Exception{
+    public SignedMessage(int senderId, int destinationId, int messageId, Type type, PrivateKey privateKey) throws Exception{
         super(senderId, destinationId, type);
+        this.setMessageId(messageId);
         this.signature = SecurityUtil.signMessage(this, privateKey);
     }
 

@@ -60,6 +60,7 @@ public class Link implements AutoCloseable, Subject {
         if (socket.isClosed()) {
             throw new LinkException(ErrorMessages.LinkClosedException);
         }
+        message.setMessageId(messageCounter.getAndIncrement());
         SignedMessage signedMessage;
         try {
             signedMessage = new SignedMessage(message, keyService.loadPrivateKey("p" + myProcess.getId()));
@@ -67,7 +68,6 @@ public class Link implements AutoCloseable, Subject {
         } catch (Exception e) {
             throw new LinkException(ErrorMessages.SignatureError, e);
         }
-        message.setMessageId(messageCounter.getAndIncrement());
 
         if (nodeId == myProcess.getId()) {
             localMessages.add(signedMessage);
@@ -127,15 +127,14 @@ public class Link implements AutoCloseable, Subject {
                 myProcess.getId(), message.getType(), message.getMessageId(), message.getSenderId());
 
         // Send ACK back to the sender if not me
-        if(message.getSenderId() != myProcess.getId()) {
+        if(message.getSenderId() != myProcess.getId() && packet != null) {
             InetAddress senderHost = packet.getAddress();
             int senderPort = packet.getPort();
 
             SignedMessage signedResponse = new SignedMessage(
-                    myProcess.getId(), message.getSenderId(), Message.Type.ACK,
-                    keyService.loadPrivateKey("p" + myProcess.getId())
+                    myProcess.getId(), message.getSenderId(), message.getMessageId(),
+                    Message.Type.ACK, keyService.loadPrivateKey("p" + myProcess.getId())
             );
-            signedResponse.setMessageId(message.getMessageId());
             unreliableSend(senderHost, senderPort, signedResponse);
             logger.info("P{}: ACK {} sent to node P{}",
                     myProcess.getId(), message.getMessageId(), message.getSenderId());
@@ -159,7 +158,8 @@ public class Link implements AutoCloseable, Subject {
                 } else {
                     packet = listenOnSocket();
                     byte[] buffer = Arrays.copyOfRange(packet.getData(), 0, packet.getLength());
-                    message = new Gson().fromJson(new String(buffer), SignedMessage.class);
+                    String json = new String(buffer);
+                    message = new Gson().fromJson(json, SignedMessage.class);
                 }
                 PublicKey peerPublicKey = keyService.loadPublicKey("p" + message.getSenderId());
                 boolean messageIsAuthentic = SecurityUtil.verifySignature(message, peerPublicKey);
@@ -173,7 +173,7 @@ public class Link implements AutoCloseable, Subject {
                 if (message.getType() == Message.Type.ACK) {
                     handleAckMessage(message);
                 } else {
-                    handleNonAckMessage(message, Objects.requireNonNull(packet));
+                    handleNonAckMessage(message, packet);
                 }
             } catch (Exception e) {
                 if (running) {

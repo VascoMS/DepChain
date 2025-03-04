@@ -1,6 +1,7 @@
 package consensus.core.primitives;
 
 import com.google.gson.Gson;
+import consensus.core.model.BroadcastPayload;
 import consensus.core.model.Message;
 import consensus.util.Process;
 import consensus.exception.LinkException;
@@ -10,6 +11,8 @@ import org.slf4j.LoggerFactory;
 import java.util.Arrays;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import static consensus.core.model.BroadcastPayload.BroadcastType.*;
 
 public class ReliableBroadcast {
 
@@ -38,68 +41,75 @@ public class ReliableBroadcast {
         this.byzantineProcesses = byzantineProcesses;
     }
 
-    private void sendEcho(int myId, Message message) throws LinkException {
+    private void sendEcho(int myId, BroadcastPayload payload) throws LinkException {
         if (sentEcho.get()) return;
-        logger.info("P{}: Echoing message with id {}", myProcess.getId(), message.getMessageId());
+        payload.setSenderId(myId);
+        payload.setBType(ECHO);
+        String bPayloadString = new Gson().toJson(payload);
+        logger.info("P{}: Echoing message: {}", myProcess.getId(), payload.getContent());
         sentEcho.set(true);
         link.send(
                 myId,
-                new Message(myId, myId, Message.Type.ECHO, message.getPayload())
+                new Message(myId, myId, Message.Type.BROADCAST, bPayloadString)
         );
         for (Process process : peers) {
             int processId = process.getId();
             link.send(
                     process.getId(),
-                    new Message(myId, processId, Message.Type.ECHO, message.getPayload())
+                    new Message(myId, processId, Message.Type.BROADCAST, bPayloadString)
             );
         }
     }
 
     private void sendReady(
             int myId,
-            Message message,
+            BroadcastPayload payload,
             ConcurrentHashMap<Integer, String> processMessages,
             int sendThreshold
     ) throws LinkException {
-        processMessages.putIfAbsent(message.getSenderId(), message.getPayload());
+        processMessages.putIfAbsent(payload.getSenderId(), payload.getContent());
         if (!sentReady.get() &&
                 processMessages.values().stream()
-                        .filter((m -> m.equals(message.getPayload())))
+                        .filter((m -> m.equals(payload.getContent())))
                         .count() > sendThreshold) {
             sentReady.set(true);
-            logger.info("P{}: Readying message with id {}", myProcess.getId(), message.getMessageId());
+            
+            payload.setSenderId(myId);
+            payload.setBType(READY);
+            String bPayloadString = new Gson().toJson(payload);
+            logger.info("P{}: Readying message: {}", myProcess.getId(), payload.getContent());
             link.send(
                     myId,
-                    new Message(myId, myId, Message.Type.READY, message.getPayload())
+                    new Message(myId, myId, Message.Type.BROADCAST, bPayloadString)
             );
             for (Process process : peers) {
                 int processId = process.getId();
                 link.send(
                         process.getId(),
-                        new Message(myId, processId, Message.Type.READY, message.getPayload())
+                        new Message(myId, processId, Message.Type.BROADCAST, bPayloadString)
                 );
             }
         }
     }
 
-    public Message collect(String broadcastId) throws LinkException {
+    public String collect(String broadcastId) throws LinkException {
         int myId = myProcess.getId();
         // Infinite loop to keep receiving messages until delivery can be done.
         while(true) {
-            BroadcastMessage message = broker.receiveBroadcastMessage(broadcastId);
-            if (message == null) continue;
-            switch (message.getType()) {
-                case SEND -> sendEcho(myId, message);
-                case ECHO -> sendReady(myId, message, echos, (int) ((Arrays.stream(peers).count() + 1) / 2));
+            BroadcastPayload payload = broker.receiveBroadcastMessage(broadcastId);
+            if (payload == null) continue;
+            switch (payload.getBType()) {
+                case SEND -> sendEcho(myId, payload);
+                case ECHO -> sendReady(myId, payload, echos, (int) ((Arrays.stream(peers).count() + 1) / 2));
                 case READY -> {
-                    sendReady(myId, message, readys, byzantineProcesses);
+                    sendReady(myId, payload, readys, byzantineProcesses);
                     if (!delivered.get() &&
                             readys.values().stream()
-                                    .filter((m -> m.equals(message.getPayload())))
+                                    .filter((m -> m.equals(payload.getContent())))
                                     .count() > 2L * byzantineProcesses) {
                         delivered.set(true);
-                        logger.info("P{}: Delivering message with id {}", myProcess.getId(), message.getMessageId());
-                        return new Gson().fromJson(message.getPayload(), Message.class);
+                        logger.info("P{}: Delivering message: {}", myProcess.getId(), payload.getContent());
+                        return payload.getContent();
                     }
                 }
             }

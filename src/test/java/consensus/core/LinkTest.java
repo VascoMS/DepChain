@@ -40,7 +40,7 @@ public class LinkTest {
         CountDownLatch latch = new CountDownLatch(1);
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
 
-        Message aliceMessage = new Message(1, 2, Message.Type.RECEIVE, "hello");
+        Message aliceMessage = new Message(1, 2, Message.Type.UNICAST, "hello");
 
         // Assert
         Observer bobObserver = new Observer() {
@@ -61,6 +61,42 @@ public class LinkTest {
         bobLink.addObserver(bobObserver);
         aliceLink.send(2, aliceMessage);
         latch.await();
+        bobLink.removeObserver(bobObserver);
+
+        if(!failures.isEmpty()) {
+            throw failures.peek();
+        }
+
+    }
+
+    @Test
+    public void sendToSelf() throws Exception {
+
+        CountDownLatch latch = new CountDownLatch(1);
+        ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
+
+        Message aliceMessage = new Message(1, 1, Message.Type.UNICAST, "hello");
+
+        // Assert
+        Observer aliceObserver = new Observer() {
+            @Override
+            public void update(Message message) {
+                try {
+                    System.out.println("Received message.");
+                    // Assert
+                    assertEquals(message, aliceMessage);
+                    latch.countDown();
+                } catch(AssertionError failure) {
+                    failures.add(failure);
+                }
+
+            }
+        };
+
+        aliceLink.addObserver(aliceObserver);
+        aliceLink.send(1, aliceMessage);
+        latch.await();
+        aliceLink.removeObserver(aliceObserver);
 
         if(!failures.isEmpty()) {
             throw failures.peek();
@@ -75,7 +111,7 @@ public class LinkTest {
                 () -> { aliceLink.send(100, new Message(
                         1,
                         100,
-                        Message.Type.RECEIVE,
+                        Message.Type.UNICAST,
                         "hello"
                 ));},
                 ErrorMessages.NoSuchNodeError.getMessage()
@@ -92,7 +128,7 @@ public class LinkTest {
                 () -> { link.send(1, new Message(
                         999,
                         1,
-                        Message.Type.RECEIVE,
+                        Message.Type.UNICAST,
                         "hello"
                 ));},
                 ErrorMessages.LinkClosedException.getMessage()

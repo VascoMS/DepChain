@@ -1,5 +1,7 @@
 package consensus.core;
 
+import com.google.gson.Gson;
+import consensus.core.model.BroadcastPayload;
 import consensus.core.model.Message;
 import consensus.core.primitives.BroadcastBroker;
 import consensus.core.primitives.Link;
@@ -7,6 +9,7 @@ import consensus.util.Process;
 import org.junit.jupiter.api.*;
 
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -90,14 +93,15 @@ public class ReliableBroadcastTest {
         ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<Thread> threads = new ConcurrentLinkedQueue<>();
 
-        Message aliceMessage = new Message(1, Message.Type.WRITE, "hello.");
+        CountDownLatch latch = new CountDownLatch(4);
 
         // Assert
         for(BroadcastBroker broadcast :
                 new BroadcastBroker[]{aliceBroadcast, bobBroadcast, carlBroadcast, jeffBroadcast}) {
             threads.add(new Thread(() -> {
                 try {
-                    assertEquals(aliceMessage, broadcast.receiveMessage());
+                    assertEquals("hello.", broadcast.receiveMessage());
+                    latch.countDown();
                 } catch (Throwable e) {
                     if(e instanceof AssertionError) {
                         failures.add((AssertionError) e);
@@ -110,15 +114,9 @@ public class ReliableBroadcastTest {
         threads.forEach(Thread::start);
 
         // Act
-        aliceBroadcast.broadcast(aliceMessage);
+        aliceBroadcast.broadcast("hello.").get();
 
-        threads.forEach(thread -> {
-            try {
-                thread.join();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        });
+        latch.await();
 
         if(!failures.isEmpty()) {
             throw failures.peek();
@@ -136,14 +134,21 @@ public class ReliableBroadcastTest {
         ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<Thread> threads = new ConcurrentLinkedQueue<>();
 
-        Message byzantineMessage = new Message(4, Message.Type.SEND, "ha. ha.");
+        BroadcastPayload payload = new BroadcastPayload(
+                4,
+                BroadcastPayload.BroadcastType.SEND,
+                new Gson().toJson("ha ha.")
+        );
+        Message message = new Message(
+                4, Message.Type.BROADCAST, new Gson().toJson(payload)
+        );
 
         for(BroadcastBroker broadcast :
                 new BroadcastBroker[]{aliceBroadcast, bobBroadcast, carlBroadcast, jeffBroadcast}) {
             threads.add(new Thread(() -> {
                 try {
                     // Assert
-                    assertEquals(byzantineMessage, broadcast.receiveMessage());
+                    assertEquals("ha ha.", broadcast.receiveMessage());
                 } catch (Throwable e) {
                     if(e instanceof AssertionError) {
                         failures.add((AssertionError) e);
@@ -157,9 +162,9 @@ public class ReliableBroadcastTest {
 
         // Act
         // Only sending to Alice and Bob, Carl doesn't get sent the message.
-        jeffLink.send(1, byzantineMessage);
-        jeffLink.send(2, byzantineMessage);
-        jeffLink.send(4, byzantineMessage);
+        jeffLink.send(1, message);
+        jeffLink.send(2, message);
+        jeffLink.send(4, message);
 
         threads.forEach(thread -> {
             try {
@@ -185,15 +190,30 @@ public class ReliableBroadcastTest {
         ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<Thread> threads = new ConcurrentLinkedQueue<>();
 
-        Message normalMessage = new Message(4, Message.Type.SEND, "smiley face.");
-        Message byzantineMessage = new Message(4, Message.Type.SEND, "ha. ha.");
+        BroadcastPayload normalPayload = new BroadcastPayload(
+                4,
+                BroadcastPayload.BroadcastType.SEND,
+                "hello."
+        );
+        Message normalMessage = new Message(
+                4, Message.Type.BROADCAST, new Gson().toJson(normalPayload)
+        );
+
+        BroadcastPayload byzantinePayload = new BroadcastPayload(
+                4,
+                BroadcastPayload.BroadcastType.SEND,
+                "hell-o."
+        );
+        Message byzantineMessage = new Message(
+                4, Message.Type.BROADCAST, new Gson().toJson(byzantinePayload)
+        );
 
         for(BroadcastBroker broadcast :
                 new BroadcastBroker[]{aliceBroadcast, bobBroadcast, carlBroadcast, jeffBroadcast}) {
             threads.add(new Thread(() -> {
                 try {
                     // Assert
-                    assertEquals(normalMessage, broadcast.receiveMessage());
+                    assertEquals("hello.", broadcast.receiveMessage());
                 } catch (Throwable e) {
                     if(e instanceof AssertionError) {
                         failures.add((AssertionError) e);
