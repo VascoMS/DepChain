@@ -18,7 +18,8 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.security.PublicKey;
 import java.util.*;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class Link implements AutoCloseable, Subject {
@@ -28,7 +29,7 @@ public class Link implements AutoCloseable, Subject {
     private final Map<Integer, Process> peers;
     private final CollapsingSet acksList;
     private final AtomicInteger messageCounter;
-    private final Queue<SignedMessage> localMessages;
+    private final BlockingQueue<SignedMessage> messageQueue;
     private final KeyService keyService;
     private final int baseSleepTime;
     private final List<Observer> observers;
@@ -48,12 +49,15 @@ public class Link implements AutoCloseable, Subject {
         } catch (Exception e) {
             throw new LinkException(ErrorMessages.LinkCreationError, e);
         }
-        Thread receiverThread = new Thread(this::messageReceiver);
-        this.running = true;
-        receiverThread.start();
+        this.messageQueue = new LinkedBlockingQueue<>();
         this.acksList = new CollapsingSet();
         this.messageCounter = new AtomicInteger(0);
-        this.localMessages = new ConcurrentLinkedQueue<>();
+
+        Thread receiverThread = new Thread(this::messageReceiver);
+        Thread socketThread = new Thread(this::socketReceiver);
+        this.running = true;
+        receiverThread.start();
+        socketThread.start();
     }
 
     public void send(int nodeId, Message message) throws LinkException {
@@ -70,9 +74,8 @@ public class Link implements AutoCloseable, Subject {
         }
 
         if (nodeId == myProcess.getId()) {
-            localMessages.add(signedMessage);
+            messageQueue.add(signedMessage);
             logger.info("P{}: Message {} {} added to local messages", myProcess.getId(), message.getType(), message.getMessageId());
-            observers.forEach(observer -> observer.update(message));
             return;
         }
 
@@ -122,20 +125,21 @@ public class Link implements AutoCloseable, Subject {
                 myProcess.getId(), message.getMessageId(), message.getSenderId());
     }
 
-    private void handleNonAckMessage(SignedMessage message, DatagramPacket packet) throws Exception {
+    private void handleNonAckMessage(SignedMessage message) throws Exception {
         logger.info("P{}: Message {} {} received from node P{}.",
                 myProcess.getId(), message.getType(), message.getMessageId(), message.getSenderId());
 
         // Send ACK back to the sender if not me
-        if(message.getSenderId() != myProcess.getId() && packet != null) {
-            InetAddress senderHost = packet.getAddress();
-            int senderPort = packet.getPort();
+        if(message.getSenderId() != myProcess.getId()) {
+            Process sender = peers.get(message.getSenderId());
+            String senderHost = sender.getHost();
+            int senderPort = sender.getPort();
 
             SignedMessage signedResponse = new SignedMessage(
                     myProcess.getId(), message.getSenderId(), message.getMessageId(),
                     Message.Type.ACK, keyService.loadPrivateKey("p" + myProcess.getId())
             );
-            unreliableSend(senderHost, senderPort, signedResponse);
+            unreliableSend(InetAddress.getByName(senderHost), senderPort, signedResponse);
             logger.info("P{}: ACK {} sent to node P{}",
                     myProcess.getId(), message.getMessageId(), message.getSenderId());
         }
@@ -144,23 +148,30 @@ public class Link implements AutoCloseable, Subject {
         notifyObservers(message);
     }
 
+    private void socketReceiver() {
+        logger.info("P{}: Started listening on socket.", myProcess.getId());
+        while(running && !socket.isClosed()) {
+            try {
+                DatagramPacket packet = listenOnSocket();
+                byte[] buffer = Arrays.copyOfRange(packet.getData(), 0, packet.getLength());
+                String json = new String(buffer);
+                SignedMessage message = new Gson().fromJson(json, SignedMessage.class);
+                messageQueue.add(message);
+            } catch (Exception e) {
+                if (running) {
+                    logger.error("Error in message receiver: {}", e.getMessage(), e);
+                }
+            }
+
+        }
+    }
+
     private void messageReceiver() {
         logger.info("P{}: Started listening.", myProcess.getId());
+
         while (running && !socket.isClosed()) {
             try {
-
-                DatagramPacket packet;
-                SignedMessage message;
-
-                if(!localMessages.isEmpty()) {
-                    packet = null;
-                    message = localMessages.poll();
-                } else {
-                    packet = listenOnSocket();
-                    byte[] buffer = Arrays.copyOfRange(packet.getData(), 0, packet.getLength());
-                    String json = new String(buffer);
-                    message = new Gson().fromJson(json, SignedMessage.class);
-                }
+                SignedMessage message = messageQueue.take();
                 PublicKey peerPublicKey = keyService.loadPublicKey("p" + message.getSenderId());
                 boolean messageIsAuthentic = SecurityUtil.verifySignature(message, peerPublicKey);
 
@@ -173,7 +184,7 @@ public class Link implements AutoCloseable, Subject {
                 if (message.getType() == Message.Type.ACK) {
                     handleAckMessage(message);
                 } else {
-                    handleNonAckMessage(message, packet);
+                    handleNonAckMessage(message);
                 }
             } catch (Exception e) {
                 if (running) {
@@ -196,6 +207,8 @@ public class Link implements AutoCloseable, Subject {
     @Override
     public void notifyObservers(Message message) {
         for (Observer observer : observers) {
+            logger.info("P{}: Notifying observer of message {} {}",
+                    myProcess.getId(), message.getType(), message.getMessageId());
             observer.update(message);
         }
     }

@@ -92,12 +92,14 @@ public class ReliableBroadcast {
         }
     }
 
-    public String collect(String broadcastId) throws LinkException {
+    public String collect(String broadcastId) throws Exception {
         int myId = myProcess.getId();
         // Infinite loop to keep receiving messages until delivery can be done.
         while(true) {
+            logger.info("P{}: Waiting for message for broadcast {}...", myProcess.getId(), broadcastId);
             BroadcastPayload payload = broker.receiveBroadcastMessage(broadcastId);
             if (payload == null) continue;
+            logger.info("P{}: Collecting Received message: {}", myProcess.getId(), payload.getContent());
             switch (payload.getBType()) {
                 case SEND -> sendEcho(myId, payload);
                 case ECHO -> sendReady(myId, payload, echos, (int) ((Arrays.stream(peers).count() + 1) / 2));

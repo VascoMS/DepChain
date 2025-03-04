@@ -101,13 +101,14 @@ public class ReliableBroadcastTest {
             threads.add(new Thread(() -> {
                 try {
                     assertEquals("hello.", broadcast.receiveMessage());
-                    latch.countDown();
                 } catch (Throwable e) {
                     if(e instanceof AssertionError) {
                         failures.add((AssertionError) e);
                     } else if(e instanceof Exception) {
                         errors.add((Exception) e);
                     }
+                } finally {
+                    latch.countDown();
                 }
             }));
         }
@@ -134,10 +135,12 @@ public class ReliableBroadcastTest {
         ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<Thread> threads = new ConcurrentLinkedQueue<>();
 
+        CountDownLatch latch = new CountDownLatch(4);
+
         BroadcastPayload payload = new BroadcastPayload(
                 4,
                 BroadcastPayload.BroadcastType.SEND,
-                new Gson().toJson("ha ha.")
+                "ha ha."
         );
         Message message = new Message(
                 4, Message.Type.BROADCAST, new Gson().toJson(payload)
@@ -155,6 +158,8 @@ public class ReliableBroadcastTest {
                     } else if(e instanceof Exception) {
                         errors.add((Exception) e);
                     }
+                } finally {
+                    latch.countDown();
                 }
             }));
         }
@@ -166,13 +171,7 @@ public class ReliableBroadcastTest {
         jeffLink.send(2, message);
         jeffLink.send(4, message);
 
-        threads.forEach(thread -> {
-            try {
-                thread.join();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        });
+        latch.await();
 
         if(!failures.isEmpty()) {
             throw failures.peek();
@@ -190,6 +189,8 @@ public class ReliableBroadcastTest {
         ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<Thread> threads = new ConcurrentLinkedQueue<>();
 
+        CountDownLatch latch = new CountDownLatch(4);
+
         BroadcastPayload normalPayload = new BroadcastPayload(
                 4,
                 BroadcastPayload.BroadcastType.SEND,
@@ -201,6 +202,7 @@ public class ReliableBroadcastTest {
 
         BroadcastPayload byzantinePayload = new BroadcastPayload(
                 4,
+                normalPayload.getBroadcastId(),
                 BroadcastPayload.BroadcastType.SEND,
                 "hell-o."
         );
@@ -220,6 +222,8 @@ public class ReliableBroadcastTest {
                     } else if(e instanceof Exception) {
                         errors.add((Exception) e);
                     }
+                } finally {
+                    latch.countDown();
                 }
             }));
         }
@@ -232,13 +236,7 @@ public class ReliableBroadcastTest {
         jeffLink.send(3, byzantineMessage);
         jeffLink.send(4, normalMessage);
 
-        threads.forEach(thread -> {
-            try {
-                thread.join();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        });
+        latch.await();
 
         if(!failures.isEmpty()) {
             throw failures.peek();

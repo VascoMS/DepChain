@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static consensus.core.model.BroadcastPayload.BroadcastType.SEND;
 
@@ -18,7 +19,7 @@ public class BroadcastBroker implements Observer {
     private static final Logger logger = LoggerFactory.getLogger(BroadcastBroker.class);
     private static final ExecutorService executor = Executors.newFixedThreadPool(4);
     private final ConcurrentHashMap<String, BlockingQueue<BroadcastPayload>> broadcasts;
-    private final LinkedBlockingQueue<String> deliveredMessages;
+    private final BlockingQueue<String> deliveredMessages;
     private final ConcurrentHashMap<String, CompletableFuture<Void>> senderFutures = new ConcurrentHashMap<>();
     private final Process myProcess;
     private final Process[] peers;
@@ -40,6 +41,8 @@ public class BroadcastBroker implements Observer {
         if(message.getType() != Message.Type.BROADCAST) return;
         BroadcastPayload bPayload = new Gson().fromJson(message.getPayload(), BroadcastPayload.class);
         // Creates a new broadcast to allow for a listener process to collect the messages and deliver them according to the Reliable Broadcast specification
+        logger.info("P{}: Received {} broadcast message from P{}",
+                myProcess.getId(), bPayload.getBType(), bPayload.getSenderId());
         broadcasts.computeIfAbsent(bPayload.getBroadcastId(), k -> {
             executor.execute(() -> {
                 ReliableBroadcast broadcast =
@@ -51,7 +54,7 @@ public class BroadcastBroker implements Observer {
                     if(senderFutures.containsKey(bPayload.getBroadcastId()))
                         senderFutures.get(bPayload.getBroadcastId()).complete(null);
                     senderFutures.remove(bPayload.getBroadcastId());
-                } catch (LinkException e) {
+                } catch (Exception e) {
                     logger.error("P{}: Error collecting broadcast messages: {}", myProcess.getId(), e.getMessage());
                 }
             });
@@ -78,12 +81,13 @@ public class BroadcastBroker implements Observer {
         return future;
     }
 
-    protected BroadcastPayload receiveBroadcastMessage(String broadcastId) {
+    protected BroadcastPayload receiveBroadcastMessage(String broadcastId) throws InterruptedException {
+
         broadcasts.computeIfAbsent(broadcastId, k -> new LinkedBlockingQueue<>());
-        return broadcasts.get(broadcastId).poll();
+        return broadcasts.get(broadcastId).take();
     }
 
-    public String receiveMessage() {
-        return deliveredMessages.poll();
+    public String receiveMessage() throws InterruptedException {
+        return deliveredMessages.take();
     }
 }
