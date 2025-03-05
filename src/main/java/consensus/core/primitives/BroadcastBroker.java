@@ -10,14 +10,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import static consensus.core.model.BroadcastPayload.BroadcastType.SEND;
 
 public class BroadcastBroker implements Observer {
 
     private static final Logger logger = LoggerFactory.getLogger(BroadcastBroker.class);
-    private static final ExecutorService executor = Executors.newFixedThreadPool(4);
+    private static final ExecutorService executor = Executors.newFixedThreadPool(2);
     private final ConcurrentHashMap<String, BlockingQueue<BroadcastPayload>> broadcasts;
     private final BlockingQueue<String> deliveredMessages;
     private final ConcurrentHashMap<String, CompletableFuture<Void>> senderFutures = new ConcurrentHashMap<>();
@@ -43,8 +42,9 @@ public class BroadcastBroker implements Observer {
         // Creates a new broadcast to allow for a listener process to collect the messages and deliver them according to the Reliable Broadcast specification
         logger.info("P{}: Received {} broadcast message from P{}",
                 myProcess.getId(), bPayload.getBType(), bPayload.getSenderId());
-        broadcasts.computeIfAbsent(bPayload.getBroadcastId(), k -> {
-            executor.execute(() -> {
+        BlockingQueue<?> oldQueue = broadcasts.putIfAbsent(bPayload.getBroadcastId(), new LinkedBlockingQueue<>());
+        if(oldQueue == null) {
+            new Thread(() -> {
                 ReliableBroadcast broadcast =
                         new ReliableBroadcast(this, myProcess, peers, link, byzantineProcesses);
                 try {
@@ -57,10 +57,13 @@ public class BroadcastBroker implements Observer {
                 } catch (Exception e) {
                     logger.error("P{}: Error collecting broadcast messages: {}", myProcess.getId(), e.getMessage());
                 }
-            });
-            return new LinkedBlockingQueue<>();
-        });
-        broadcasts.get(bPayload.getBroadcastId()).add(bPayload);
+            }).start();
+        }
+        try {
+            broadcasts.get(bPayload.getBroadcastId()).put(bPayload);
+        } catch(InterruptedException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public CompletableFuture<Void> broadcast(String payload) throws LinkException {
@@ -82,8 +85,6 @@ public class BroadcastBroker implements Observer {
     }
 
     protected BroadcastPayload receiveBroadcastMessage(String broadcastId) throws InterruptedException {
-
-        broadcasts.computeIfAbsent(broadcastId, k -> new LinkedBlockingQueue<>());
         return broadcasts.get(broadcastId).take();
     }
 
