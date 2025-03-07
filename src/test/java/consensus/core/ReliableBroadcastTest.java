@@ -3,7 +3,7 @@ package consensus.core;
 import com.google.gson.Gson;
 import consensus.core.model.BroadcastPayload;
 import consensus.core.model.Message;
-import consensus.core.primitives.BroadcastBroker;
+import consensus.core.primitives.ConsensusBroker;
 import consensus.core.primitives.Link;
 import consensus.util.Process;
 import org.junit.jupiter.api.*;
@@ -20,10 +20,10 @@ public class ReliableBroadcastTest {
     private static Link carlLink;
     private static Link jeffLink;
 
-    private static BroadcastBroker aliceBroadcast;
-    private static BroadcastBroker bobBroadcast;
-    private static BroadcastBroker carlBroadcast;
-    private static BroadcastBroker jeffBroadcast;
+    private static ConsensusBroker aliceBroadcast;
+    private static ConsensusBroker bobBroadcast;
+    private static ConsensusBroker carlBroadcast;
+    private static ConsensusBroker jeffBroadcast;
 
     @BeforeAll
     public static void startLinks() throws Exception {
@@ -57,28 +57,28 @@ public class ReliableBroadcastTest {
                 200
         );
 
-        aliceBroadcast = new BroadcastBroker(
+        aliceBroadcast = new ConsensusBroker(
                 aliceProcess,
                 new Process[]{bobProcess, carlProcess, jeffProcess},
                 aliceLink,
                 1
         );
 
-        bobBroadcast = new BroadcastBroker(
+        bobBroadcast = new ConsensusBroker(
                 bobProcess,
                 new Process[]{aliceProcess, carlProcess, jeffProcess},
                 bobLink,
                 1
         );
 
-        carlBroadcast = new BroadcastBroker(
+        carlBroadcast = new ConsensusBroker(
                 carlProcess,
                 new Process[]{bobProcess, aliceProcess, jeffProcess},
                 carlLink,
                 1
         );
 
-        jeffBroadcast = new BroadcastBroker(
+        jeffBroadcast = new ConsensusBroker(
                 jeffProcess,
                 new Process[]{bobProcess, carlProcess, aliceProcess},
                 jeffLink,
@@ -96,8 +96,8 @@ public class ReliableBroadcastTest {
         CountDownLatch latch = new CountDownLatch(4);
 
         // Assert
-        for(BroadcastBroker broadcast :
-                new BroadcastBroker[]{aliceBroadcast, bobBroadcast, carlBroadcast, jeffBroadcast}) {
+        for(ConsensusBroker broadcast :
+                new ConsensusBroker[]{aliceBroadcast, bobBroadcast, carlBroadcast, jeffBroadcast}) {
             threads.add(new Thread(() -> {
                 try {
                     assertEquals("hello.", broadcast.receiveMessage());
@@ -146,8 +146,8 @@ public class ReliableBroadcastTest {
                 4, Message.Type.BROADCAST, new Gson().toJson(payload)
         );
 
-        for(BroadcastBroker broadcast :
-                new BroadcastBroker[]{aliceBroadcast, bobBroadcast, carlBroadcast, jeffBroadcast}) {
+        for(ConsensusBroker broadcast :
+                new ConsensusBroker[]{aliceBroadcast, bobBroadcast, carlBroadcast, jeffBroadcast}) {
             threads.add(new Thread(() -> {
                 try {
                     // Assert
@@ -210,8 +210,8 @@ public class ReliableBroadcastTest {
                 4, Message.Type.BROADCAST, new Gson().toJson(byzantinePayload)
         );
 
-        for(BroadcastBroker broadcast :
-                new BroadcastBroker[]{aliceBroadcast, bobBroadcast, carlBroadcast, jeffBroadcast}) {
+        for(ConsensusBroker broadcast :
+                new ConsensusBroker[]{aliceBroadcast, bobBroadcast, carlBroadcast, jeffBroadcast}) {
             threads.add(new Thread(() -> {
                 try {
                     // Assert
