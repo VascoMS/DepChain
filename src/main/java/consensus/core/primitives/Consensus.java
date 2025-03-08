@@ -1,6 +1,7 @@
 package consensus.core.primitives;
 
 import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import consensus.core.KeyService;
 import consensus.core.model.*;
 import consensus.util.Process;
@@ -9,13 +10,15 @@ import consensus.util.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Type;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class Consensus {
-
+    // TODO: Figure out the epochs madness (If they are bound to a consensus instance or are continuous across rounds)
     private static final Logger logger = LoggerFactory.getLogger(Consensus.class);
     private final ConsensusBroker broker;
     private final Process myProcess;
@@ -38,7 +41,6 @@ public class Consensus {
             KeyService keyService,
             Link link,
             int epoch,
-            WriteState myState,
             int byzantineProcesses
     ) {
         this.broker = broker;
@@ -48,7 +50,7 @@ public class Consensus {
         this.keyService = keyService;
         this.epoch = epoch;
         this.currentLeaderId = getRoundRobinLeader(epoch, peers.length + 1);
-        this.myState = myState;
+        this.myState = new WriteState();
         this.peersStates = new ConcurrentHashMap<>();
         this.peersWrites = new ConcurrentHashMap<>();
         this.peersAccepts = new ConcurrentHashMap<>();
@@ -59,6 +61,11 @@ public class Consensus {
         if(senderId == currentLeaderId) {
             logger.info("P{}: Received READ Request. Sending state to leader P{}.",
                     myId, currentLeaderId);
+            if(myState.getLatestWrite() == null){
+                // TODO: Don't forget to return requests to queue if they aren't decided
+                WritePair writePair = new WritePair(epoch, broker.fetchClientRequest());
+                myState.setLatestWrite(writePair);
+            }
             ConsensusPayload statePayload = new ConsensusPayload(
                     myId,
                     consensusId,
@@ -69,7 +76,7 @@ public class Consensus {
             );
             // Send to leader
             link.send(
-                    myId,
+                    currentLeaderId,
                     new Message(myId, currentLeaderId, Message.Type.CONSENSUS, new Gson().toJson(statePayload))
             );
         }
@@ -105,7 +112,7 @@ public class Consensus {
         WriteState leaderState = new Gson().fromJson(
                 collectedStates.get(currentLeaderId).getContent(), WriteState.class
         );
-        Transaction leaderValue = leaderState.getLastestWrite().value();
+        Transaction leaderValue = leaderState.getLatestWrite().value();
 
         List<WriteState> writeStates = extractWriteStates(collectedStates);
         List<List<WritePair>> writeSets = writeStates.stream()
@@ -133,8 +140,13 @@ public class Consensus {
         if (peersWrites.values().stream()
                         .filter(m -> m.equals(collectedWrite))
                         .count() > 2L * byzantineProcesses) {
+            // Validate observed write
+            if(!validateTransaction(collectedWrite.value())) {
+                logger.error("P{}: Invalid client transaction signature.", myId);
+                return false;
+            }
             logger.info("P{}: Sending ACCEPT message, value {}", myId, collectedWrite.value());
-            myState.setLastestWrite(collectedWrite);
+            myState.setLatestWrite(collectedWrite);
             ConsensusPayload collectedPayload = new ConsensusPayload(
                     myId,
                     receivedPayload.getConsensusId(),
@@ -146,13 +158,22 @@ public class Consensus {
             sendConsensusMessage(myId, collectedPayload);
             return true;
         }
-
         if (peersWrites.size() > peers.length + 1) {
             logger.info("P{}: Could not reach consensus, abort.", myId);
             return false;
         }
-
         return true;
+    }
+
+    private boolean validateTransaction(Transaction transaction) {
+        try {
+            return SecurityUtil.verifySignature(
+                    transaction, keyService.loadPublicKey("c" + transaction.clientId())
+            );
+        } catch (Exception e) {
+            logger.error("P{}: Error checking transaction signature: {}", myProcess.getId(), e);
+            return false;
+        }
     }
 
     private boolean handleAccept(int myId, ConsensusPayload receivedPayload) {
@@ -177,7 +198,8 @@ public class Consensus {
             logger.info("P{}: Waiting for message for consensus {}...", myProcess.getId(), consensusId);
             ConsensusPayload payload = broker.receiveConsensusMessage(consensusId);
             if (payload == null) continue;
-            logger.info("P{}: Collecting Received message: {}", myProcess.getId(), payload.getContent());
+            logger.info("P{}: Collecting Received message {}: {}",
+                    myProcess.getId(), payload.getCType(), payload.getContent());
             switch (payload.getCType()) {
                 case READ -> handleRead(myId, payload.getSenderId(), payload.getConsensusId());
                 case STATE -> handleState(myId, payload);
@@ -196,16 +218,13 @@ public class Consensus {
     }
 
     private HashMap<Integer, ConsensusPayload> parseCollectedStates(ConsensusPayload receivedPayload) {
-        return new Gson().fromJson(
-                receivedPayload.getContent(),
-                HashMap.class
-        );
+        Type type = new TypeToken<HashMap<Integer, ConsensusPayload>>() {}.getType();
+        return new Gson().fromJson(receivedPayload.getContent(), type);
     }
 
     private boolean verifyCollectedStates(int myId, HashMap<Integer, ConsensusPayload> collectedStates) {
         try {
-            for (var entry : collectedStates.entrySet()) {
-                ConsensusPayload processState = entry.getValue();
+            for (ConsensusPayload processState : collectedStates.values()) {
                 if (!verifyProcessSignature(myId, processState)) {
                     return false;
                 }
@@ -226,15 +245,6 @@ public class Consensus {
                 processState.getSignature(),
                 keyService.loadPublicKey("p" + processState.getSenderId())
         );
-        if(isValid) {
-            Transaction processTransaction = new Gson().fromJson(
-                    processState.getContent(), Transaction.class
-            );
-            isValid = SecurityUtil.verifySignature(
-                    processTransaction,
-                    keyService.loadPublicKey("c" + processTransaction.clientId())
-            );
-        }
 
         if (!isValid) {
             logger.info("P{}: Invalid signature from P{}, aborting.",
@@ -252,7 +262,7 @@ public class Consensus {
 
     private List<WritePair> extractLatestWrites(List<WriteState> writeStates) {
         return writeStates.stream()
-                .map(WriteState::getLastestWrite)
+                .map(WriteState::getLatestWrite)
                 .toList();
     }
 
@@ -276,7 +286,9 @@ public class Consensus {
 
 
     private Transaction decideToWriteValue(int myId, List<WritePair> writePairs, List<List<WritePair>> writeSets, Transaction leaderValue) {
-        WritePair mostRecentWritePair = writePairs.stream().max(Comparator.comparingInt(WritePair::timestamp)).orElse(null);
+        WritePair mostRecentWritePair = writePairs.stream()
+                .filter(Objects::nonNull)
+                .max(Comparator.comparingInt(WritePair::timestamp)).orElse(null);
         if(mostRecentWritePair != null && writeSets.stream().allMatch(List::isEmpty) ||
                 writeSets.stream()
                         .filter(writeSetList -> writeSetList.stream()

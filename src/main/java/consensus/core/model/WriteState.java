@@ -9,20 +9,25 @@ import java.util.List;
 @Getter
 public class WriteState {
     @Setter
-    private WritePair lastestWrite;
+    private WritePair latestWrite;
     private final List<WritePair> writeSet;
 
     public WriteState() {
-        this.lastestWrite = null;
+        this.latestWrite = null;
         this.writeSet = new ArrayList<>();
     }
 
     public WriteState(WritePair lastestWrite, List<WritePair> writeSet) {
-        this.lastestWrite = lastestWrite;
+        this.latestWrite = lastestWrite;
         this.writeSet = writeSet;
     }
 
     public void addToWriteSet(WritePair writePair) {
         writeSet.add(writePair);
+    }
+
+    public void clear() {
+        latestWrite = null;
+        writeSet.clear();
     }
 }

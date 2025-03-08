@@ -1,7 +1,6 @@
 package consensus.core;
 
 import consensus.core.model.Transaction;
-import consensus.core.model.WritePair;
 import consensus.core.model.WriteState;
 import consensus.core.primitives.ConsensusBroker;
 import consensus.core.primitives.Link;
@@ -9,6 +8,7 @@ import consensus.util.Process;
 import consensus.util.SecurityUtil;
 import org.junit.jupiter.api.*;
 
+import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 
@@ -36,10 +36,10 @@ public class ConsensusTest {
     @BeforeAll
     public static void startLinks() throws Exception {
         // Assemble
-        Process aliceProcess = new Process(1, "localhost", 1024, 1024);
-        Process bobProcess = new Process(2, "localhost", 1025, 1025);
-        Process carlProcess = new Process(3, "localhost", 1026, 1026);
-        Process jeffProcess = new Process(4, "localhost", 1027, 1027);
+        Process aliceProcess = new Process(0, "localhost", 1024, 1024);
+        Process bobProcess = new Process(1, "localhost", 1025, 1025);
+        Process carlProcess = new Process(2, "localhost", 1026, 1026);
+        Process jeffProcess = new Process(3, "localhost", 1027, 1027);
 
         aliceState = new WriteState();
         bobState = new WriteState();
@@ -77,8 +77,7 @@ public class ConsensusTest {
                 new Process[]{bobProcess, carlProcess, jeffProcess},
                 aliceLink,
                 1,
-                keyService,
-                aliceState
+                keyService
         );
 
         bobBroker = new ConsensusBroker(
@@ -86,8 +85,7 @@ public class ConsensusTest {
                 new Process[]{aliceProcess, carlProcess, jeffProcess},
                 bobLink,
                 1,
-                keyService,
-                bobState
+                keyService
         );
 
         carlBroker = new ConsensusBroker(
@@ -95,8 +93,7 @@ public class ConsensusTest {
                 new Process[]{bobProcess, aliceProcess, jeffProcess},
                 carlLink,
                 1,
-                keyService,
-                carlState
+                keyService
         );
 
         jeffBroker = new ConsensusBroker(
@@ -104,8 +101,7 @@ public class ConsensusTest {
                 new Process[]{bobProcess, carlProcess, aliceProcess},
                 jeffLink,
                 1,
-                keyService,
-                jeffState
+                keyService
         );
     }
 
@@ -117,15 +113,18 @@ public class ConsensusTest {
         ConcurrentLinkedQueue<Thread> threads = new ConcurrentLinkedQueue<>();
 
         CountDownLatch latch = new CountDownLatch(4);
+        CountDownLatch finishBroadcastLatch = new CountDownLatch(1);
 
-        Transaction transaction = new Transaction("0", "0", "hello.", null);
+        Transaction transaction = generateTransaction("hello.");
+        aliceBroker.addClientRequest(transaction);
 
         // Assert
-        for(ConsensusBroker consensus :
+        for(ConsensusBroker broker :
                 new ConsensusBroker[]{aliceBroker, bobBroker, carlBroker, jeffBroker}) {
             threads.add(new Thread(() -> {
                 try {
-                    assertEquals("hello.", consensus.receiveMessage().content());
+                    finishBroadcastLatch.await();
+                    assertTrue(broker.getExecutedTransactions().contains(transaction.id()));
                 } catch (Throwable e) {
                     if(e instanceof AssertionError) {
                         failures.add((AssertionError) e);
@@ -140,9 +139,8 @@ public class ConsensusTest {
         threads.forEach(Thread::start);
 
         // Act
-        aliceState.setLastestWrite(new WritePair(0, transaction));
         aliceBroker.startConsensus().get();
-
+        finishBroadcastLatch.countDown();
         latch.await();
 
         if(!failures.isEmpty()) {
@@ -153,31 +151,32 @@ public class ConsensusTest {
             throw errors.peek();
         }
     }
- /*
+
     @Test
-    public void excludedOneByzantineBroadcast() throws Exception {
+    public void consensusWithSeveralProposes() throws Exception {
         // Assemble
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<Thread> threads = new ConcurrentLinkedQueue<>();
 
         CountDownLatch latch = new CountDownLatch(4);
+        CountDownLatch finishBroadcastLatch = new CountDownLatch(1);
 
-        BroadcastPayload payload = new BroadcastPayload(
-                4,
-                BroadcastPayload.BroadcastType.SEND,
-                "ha ha."
-        );
-        Message message = new Message(
-                4, Message.Type.BROADCAST, new Gson().toJson(payload)
-        );
+        Transaction aliceTransaction = generateTransaction("hello.");
+        Transaction bobTransaction = generateTransaction("hell-o");
+        Transaction carlTransaction = generateTransaction("he-llo");
 
-        for(ConsensusBroker broadcast :
+        aliceBroker.addClientRequest(aliceTransaction);
+        bobBroker.addClientRequest(bobTransaction);
+        carlBroker.addClientRequest(carlTransaction);
+
+        // Assert
+        for(ConsensusBroker broker :
                 new ConsensusBroker[]{aliceBroker, bobBroker, carlBroker, jeffBroker}) {
             threads.add(new Thread(() -> {
                 try {
-                    // Assert
-                    assertEquals("ha ha.", broadcast.receiveMessage());
+                    finishBroadcastLatch.await();
+                    assertTrue(broker.getExecutedTransactions().contains(aliceTransaction.id()));
                 } catch (Throwable e) {
                     if(e instanceof AssertionError) {
                         failures.add((AssertionError) e);
@@ -192,11 +191,8 @@ public class ConsensusTest {
         threads.forEach(Thread::start);
 
         // Act
-        // Only sending to Alice and Bob, Carl doesn't get sent the message.
-        jeffLink.send(1, message);
-        jeffLink.send(2, message);
-        jeffLink.send(4, message);
-
+        aliceBroker.startConsensus().get();
+        finishBroadcastLatch.countDown();
         latch.await();
 
         if(!failures.isEmpty()) {
@@ -208,40 +204,49 @@ public class ConsensusTest {
         }
     }
 
+    /*
     @Test
-    public void differentMessagesByzantineBroadcast() throws Exception {
+    public void consensusWithSeveralEpochs() throws Exception {
         // Assemble
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<Thread> threads = new ConcurrentLinkedQueue<>();
 
         CountDownLatch latch = new CountDownLatch(4);
+        CountDownLatch finishBroadcastLatch = new CountDownLatch(1);
 
-        BroadcastPayload normalPayload = new BroadcastPayload(
-                4,
-                BroadcastPayload.BroadcastType.SEND,
-                "hello."
-        );
-        Message normalMessage = new Message(
-                4, Message.Type.BROADCAST, new Gson().toJson(normalPayload)
-        );
+        Transaction aliceTransaction = generateTransaction("hello.");
+        Transaction bobTransaction = generateTransaction("hell-o");
+        Transaction carlTransaction = generateTransaction("he-llo");
 
-        BroadcastPayload byzantinePayload = new BroadcastPayload(
-                4,
-                normalPayload.getBroadcastId(),
-                BroadcastPayload.BroadcastType.SEND,
-                "hell-o."
-        );
-        Message byzantineMessage = new Message(
-                4, Message.Type.BROADCAST, new Gson().toJson(byzantinePayload)
-        );
+        skipEpochs(2);
 
-        for(ConsensusBroker broadcast :
+        WritePair aliceWritePair = new WritePair(0, aliceTransaction);
+        WritePair bobWritePair = new WritePair(2, bobTransaction);
+        WritePair carlWritePair = new WritePair(1, carlTransaction);
+
+        aliceState.setLatestWrite(aliceWritePair);
+        aliceState.addToWriteSet(aliceWritePair);
+        aliceState.addToWriteSet(bobWritePair);
+
+        bobState.setLatestWrite(bobWritePair);
+        bobState.addToWriteSet(aliceWritePair);
+        bobState.addToWriteSet(bobWritePair);
+
+        carlState.setLatestWrite(carlWritePair);
+        carlState.addToWriteSet(aliceWritePair);
+        carlState.addToWriteSet(carlWritePair);
+
+        jeffState.setLatestWrite(bobWritePair);
+        jeffState.addToWriteSet(bobWritePair);
+
+        // Assert
+        for(ConsensusBroker broker :
                 new ConsensusBroker[]{aliceBroker, bobBroker, carlBroker, jeffBroker}) {
             threads.add(new Thread(() -> {
                 try {
-                    // Assert
-                    assertEquals("hello.", broadcast.receiveMessage());
+                    finishBroadcastLatch.await();
+                    assertTrue(broker.getExecutedTransactions().contains(bobTransaction.id()));
                 } catch (Throwable e) {
                     if(e instanceof AssertionError) {
                         failures.add((AssertionError) e);
@@ -256,12 +261,8 @@ public class ConsensusTest {
         threads.forEach(Thread::start);
 
         // Act
-        // Sending normalMessage to Alice and Bob, but Carl gets sent another message.
-        jeffLink.send(1, normalMessage);
-        jeffLink.send(2, normalMessage);
-        jeffLink.send(3, byzantineMessage);
-        jeffLink.send(4, normalMessage);
-
+        carlBroker.startConsensus().get();
+        finishBroadcastLatch.countDown();
         latch.await();
 
         if(!failures.isEmpty()) {
@@ -272,7 +273,39 @@ public class ConsensusTest {
             throw errors.peek();
         }
     }
-  */
+
+
+    private void skipEpochs(int increment) {
+        for(int i = 0; i < increment; i++) {
+            aliceBroker.incrementEpoch();
+            bobBroker.incrementEpoch();
+            carlBroker.incrementEpoch();
+            jeffBroker.incrementEpoch();
+        }
+    }
+
+     */
+
+
+    private Transaction generateTransaction(String content) throws Exception {
+        String transactionId = UUID.randomUUID().toString();
+        String clientId = "1";
+        String signature = SecurityUtil.signTransaction(transactionId, clientId, content, keyService.loadPrivateKey("c" + clientId));
+        return new Transaction(transactionId, clientId, content, signature);
+    }
+
+    @AfterEach
+    public void clearStates() {
+        aliceState.clear();
+        bobState.clear();
+        carlState.clear();
+        jeffState.clear();
+
+        aliceBroker.resetEpoch();
+        bobBroker.resetEpoch();
+        carlBroker.resetEpoch();
+        jeffBroker.resetEpoch();
+    }
 
     @AfterAll
     public static void stopLinks() {

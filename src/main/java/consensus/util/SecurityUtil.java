@@ -142,6 +142,19 @@ public class SecurityUtil {
         return verifySignature(verifier, dataToVerify, transaction.signature());
     }
 
+    public static String signTransaction(String transactionId, String clientId, String content, PrivateKey privateKey) throws Exception {
+        logger.info("Signing transaction...");
+        Signature signer = initSigner(privateKey);
+
+        byte[][] dataToSign = {
+                transactionId.getBytes(),
+                clientId.getBytes(),
+                content.getBytes()
+        };
+
+        return createSignature(signer, dataToSign);
+    }
+
     private static byte[] intToBytes(int value) {
         return ByteBuffer.allocate(4).putInt(value).array();
     }

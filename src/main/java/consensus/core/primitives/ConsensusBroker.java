@@ -9,14 +9,16 @@ import consensus.util.Process;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Set;
 import java.util.concurrent.*;
 
 import static consensus.core.model.ConsensusPayload.ConsensusType.READ;
 
 public class ConsensusBroker implements Observer {
-
+    // TODO: Maybe change consensus id to consensus round index
+    // TODO: Add client request handling
     private static final Logger logger = LoggerFactory.getLogger(ConsensusBroker.class);
-    // private static final ExecutorService executor = Executors.newFixedThreadPool(2);
+    private final ExecutorService executor;
     private final ConcurrentHashMap<String, BlockingQueue<ConsensusPayload>> consensus;
     private final BlockingQueue<Transaction> decidedMessages;
     private final ConcurrentHashMap<String, CompletableFuture<Void>> senderFutures = new ConcurrentHashMap<>();
@@ -25,21 +27,22 @@ public class ConsensusBroker implements Observer {
     private final Link link;
     private final int byzantineProcesses;
     private final KeyService keyService;
-    private final int epoch;
-    private final WriteState myState;
+    private int epoch;
+    private final ConcurrentLinkedQueue<Transaction> clientRequests = new ConcurrentLinkedQueue<>();
     private final ExecutionModule executionModule;
 
-    public ConsensusBroker(Process myProcess, Process[] peers, Link link, int byzantineProcesses, KeyService keyService, WriteState myState) {
+    public ConsensusBroker(Process myProcess, Process[] peers, Link link, int byzantineProcesses, KeyService keyService) {
         consensus = new ConcurrentHashMap<>();
         decidedMessages = new LinkedBlockingQueue<>();
         this.myProcess = myProcess;
         this.peers = peers;
+        this.executor = Executors.newFixedThreadPool(4);
         this.link = link;
         this.byzantineProcesses = byzantineProcesses;
         this.keyService = keyService;
         this.epoch = 0;
-        this.myState = myState;
         this.executionModule = new ExecutionModule(decidedMessages);
+        executionModule.start();
         link.addObserver(this);
     }
 
@@ -48,26 +51,26 @@ public class ConsensusBroker implements Observer {
         if(message.getType() != Message.Type.CONSENSUS) return;
         ConsensusPayload cPayload = new Gson().fromJson(message.getPayload(), ConsensusPayload.class);
         // Creates a new broadcast to allow for a listener process to collect the messages and deliver them according to the Reliable Broadcast specification
-        logger.info("P{}: Received {} broadcast message from P{}",
+        logger.info("P{}: Received {} message from P{}",
                 myProcess.getId(), cPayload.getCType(), cPayload.getSenderId());
         BlockingQueue<?> oldQueue = consensus.putIfAbsent(cPayload.getConsensusId(), new LinkedBlockingQueue<>());
         if(oldQueue == null) {
-            new Thread(() -> {
-                Consensus broadcast =
-                        new Consensus(this, myProcess, peers, keyService, link, epoch, myState, byzantineProcesses);
+            executor.execute(() -> {
+                Consensus consensusRound =
+                        new Consensus(this, myProcess, peers, keyService, link, epoch, byzantineProcesses);
                 try {
-                    Transaction deliveredMessage = broadcast.collect(cPayload.getConsensusId());
+                    Transaction deliveredMessage = consensusRound.collect(cPayload.getConsensusId());
                     if(deliveredMessage != null) {
                         decidedMessages.add(deliveredMessage);
-                        consensus.remove(cPayload.getConsensusId());
+                        this.consensus.remove(cPayload.getConsensusId());
                         if(senderFutures.containsKey(cPayload.getConsensusId()))
                             senderFutures.get(cPayload.getConsensusId()).complete(null);
                         senderFutures.remove(cPayload.getConsensusId());
                     }
                 } catch (Exception e) {
-                    logger.error("P{}: Error collecting broadcast messages: {}", myProcess.getId(), e.getMessage());
+                    logger.error("P{}: Error collecting messages: {}", myProcess.getId(), e.getMessage());
                 }
-            }).start();
+            });
         }
         try {
             consensus.get(cPayload.getConsensusId()).put(cPayload);
@@ -98,8 +101,23 @@ public class ConsensusBroker implements Observer {
         return consensus.get(consensusId).take();
     }
 
-    public Transaction receiveMessage() throws InterruptedException {
-        executionModule.start();
-        //return decidedMessages.take();
+    protected Transaction fetchClientRequest() {
+        return clientRequests.poll();
+    }
+
+    public void addClientRequest(Transaction transaction) {
+        clientRequests.add(transaction);
+    }
+
+    public Set<String> getExecutedTransactions() {
+        return executionModule.getExecutedTransactions();
+    }
+
+    public void incrementEpoch() {
+        this.epoch++;
+    }
+
+    public void resetEpoch() {
+        this.epoch = 0;
     }
 }

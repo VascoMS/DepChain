@@ -2,6 +2,7 @@ package consensus.core.primitives;
 
 import consensus.core.model.State;
 import consensus.core.model.Transaction;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +17,7 @@ import java.util.concurrent.Executors;
 public class ExecutionModule {
     private static final Logger logger = LoggerFactory.getLogger(ExecutionModule.class);
     private final State state;
+    @Getter
     private final Set<String> executedTransactions;
     private final BlockingQueue<Transaction> queue;
     private final ExecutorService executor;
