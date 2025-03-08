@@ -8,7 +8,7 @@ import java.util.List;
 @Getter
 public class WriteState {
     @Setter
-    private final WritePair lastestWrite;
+    private WritePair lastestWrite;
     private final List<WritePair> writeSet;
 
     public WriteState(WritePair lastestWrite, List<WritePair> writeSet) {

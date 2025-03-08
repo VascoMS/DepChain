@@ -126,7 +126,7 @@ public class Consensus {
                 .map(WriteState::getLastestWrite)
                 .toList();
 
-        String writeValue = decideToWriteValue(writePairs, writeStates);
+        String writeValue = decideToWriteValue(myId, writePairs, writeStates);
 
         if(writeValue != null) {
             logger.info("P{}: Sending WRITE message, timestamp {}, value {}", myId, epoch, writeValue);
@@ -147,14 +147,15 @@ public class Consensus {
 
     };
 
-    private String decideToWriteValue(List<WritePair> writePairs, List<WriteState> writeStates) {
+    private String decideToWriteValue(int myId, List<WritePair> writePairs, List<WriteState> writeStates) {
         String mostRecentValue = writePairs.stream().max(Comparator.comparingInt(WritePair::timestamp)).get().value();
-
-        if(writeStates.stream().anyMatch(writeState -> {
-            return Objects.equals(writeState.getLastestWrite().value(), mostRecentValue);
-        })) {
+        if(writeStates.stream().
+                filter(writeState -> Objects.equals(writeState.getLastestWrite().value(), mostRecentValue))
+                .count() > byzantineProcesses) {
+            logger.info("P{}: Accepted value: {}.", myId, mostRecentValue);
             return mostRecentValue;
         } else {
+            logger.info("P{}: Value not present in byzantine quorum writesets.", myId);
             return null;
         }
     }
@@ -170,6 +171,7 @@ public class Consensus {
         if (peersWrites.values().stream()
                         .filter(m -> m.equals(collectedWrite))
                         .count() > 2L * byzantineProcesses) {
+            logger.info("P{}: Sending ACCEPT message, value {}", myId, collectedWrite.value());
             ConsensusPayload collectedPayload = new ConsensusPayload(
                     myId,
                     receivedPayload.getConsensusId(),
@@ -179,10 +181,15 @@ public class Consensus {
                     keyService
             );
             sendConsensusMessage(myId, collectedPayload);
+            return;
+        }
+
+        if ((long) peersWrites.values().size() > peers.length + 1) {
+            logger.info("P{}: Could not reach consensus, abort.", myId);
+            // TODO: Handle aborts.
         }
     }
 
-    // TODO: Update the state
     private String handleAccept(int myId, ConsensusPayload receivedPayload) throws LinkException {
         logger.info("P{}: Received ACCEPT Message from leader P{}.",
                 myId, receivedPayload.getSenderId());
@@ -192,6 +199,7 @@ public class Consensus {
                 .count() > 2L * byzantineProcesses) {
             logger.info("P{}: Consensus reached. Decided value: {}",
                     myId, receivedPayload.getContent());
+            myState.setLastestWrite(new WritePair(epoch, receivedPayload.getContent()));
             return receivedPayload.getContent();
         }
         return null;
