@@ -11,7 +11,7 @@ import java.util.Objects;
 public class Message implements Serializable {
     private final int senderId;
     @Setter
-    private final int destinationId;
+    private int destinationId;
     @Setter
     private int messageId;
     private final Type type;

@@ -2,8 +2,7 @@ package consensus.core.primitives;
 
 import com.google.gson.Gson;
 import consensus.core.KeyService;
-import consensus.core.model.ConsensusPayload;
-import consensus.core.model.Message;
+import consensus.core.model.*;
 import consensus.exception.LinkException;
 import consensus.util.Observer;
 import consensus.util.Process;
@@ -19,15 +18,18 @@ public class ConsensusBroker implements Observer {
     private static final Logger logger = LoggerFactory.getLogger(ConsensusBroker.class);
     // private static final ExecutorService executor = Executors.newFixedThreadPool(2);
     private final ConcurrentHashMap<String, BlockingQueue<ConsensusPayload>> consensus;
-    private final BlockingQueue<String> decidedMessages;
+    private final BlockingQueue<Transaction> decidedMessages;
     private final ConcurrentHashMap<String, CompletableFuture<Void>> senderFutures = new ConcurrentHashMap<>();
     private final Process myProcess;
     private final Process[] peers;
     private final Link link;
     private final int byzantineProcesses;
     private final KeyService keyService;
+    private final int epoch;
+    private final WriteState myState;
+    private final ExecutionModule executionModule;
 
-    public ConsensusBroker(Process myProcess, Process[] peers, Link link, int byzantineProcesses, KeyService keyService) {
+    public ConsensusBroker(Process myProcess, Process[] peers, Link link, int byzantineProcesses, KeyService keyService, WriteState myState) {
         consensus = new ConcurrentHashMap<>();
         decidedMessages = new LinkedBlockingQueue<>();
         this.myProcess = myProcess;
@@ -35,6 +37,9 @@ public class ConsensusBroker implements Observer {
         this.link = link;
         this.byzantineProcesses = byzantineProcesses;
         this.keyService = keyService;
+        this.epoch = 0;
+        this.myState = myState;
+        this.executionModule = new ExecutionModule(decidedMessages);
         link.addObserver(this);
     }
 
@@ -49,14 +54,16 @@ public class ConsensusBroker implements Observer {
         if(oldQueue == null) {
             new Thread(() -> {
                 Consensus broadcast =
-                        new Consensus(this, myProcess, peers, link, byzantineProcesses);
+                        new Consensus(this, myProcess, peers, keyService, link, epoch, myState, byzantineProcesses);
                 try {
-                    String deliveredMessage = broadcast.collect(cPayload.getConsensusId());
-                    decidedMessages.add(deliveredMessage);
-                    consensus.remove(cPayload.getConsensusId());
-                    if(senderFutures.containsKey(cPayload.getConsensusId()))
-                        senderFutures.get(cPayload.getConsensusId()).complete(null);
-                    senderFutures.remove(cPayload.getConsensusId());
+                    Transaction deliveredMessage = broadcast.collect(cPayload.getConsensusId());
+                    if(deliveredMessage != null) {
+                        decidedMessages.add(deliveredMessage);
+                        consensus.remove(cPayload.getConsensusId());
+                        if(senderFutures.containsKey(cPayload.getConsensusId()))
+                            senderFutures.get(cPayload.getConsensusId()).complete(null);
+                        senderFutures.remove(cPayload.getConsensusId());
+                    }
                 } catch (Exception e) {
                     logger.error("P{}: Error collecting broadcast messages: {}", myProcess.getId(), e.getMessage());
                 }
@@ -75,7 +82,7 @@ public class ConsensusBroker implements Observer {
         CompletableFuture<Void> future = new CompletableFuture<>();
         senderFutures.put(cPayload.getConsensusId(), future);
         String payloadString = new Gson().toJson(cPayload);
-        logger.info("P{}: Starting broadcast", myProcess.getId());
+        logger.info("P{}: Starting consensus", myProcess.getId());
 
         // Send the message to myself
         link.send(myId, new Message(myId, myId, Message.Type.CONSENSUS, payloadString));
@@ -91,7 +98,8 @@ public class ConsensusBroker implements Observer {
         return consensus.get(consensusId).take();
     }
 
-    public String receiveMessage() throws InterruptedException {
-        return decidedMessages.take();
+    public Transaction receiveMessage() throws InterruptedException {
+        executionModule.start();
+        //return decidedMessages.take();
     }
 }
