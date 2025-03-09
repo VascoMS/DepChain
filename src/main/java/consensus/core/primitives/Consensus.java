@@ -149,7 +149,7 @@ public class Consensus {
             }
             logger.info("P{}: Sending ACCEPT message, value {}", myId, collectedWrite.value());
             // Return request to queue if it had been fetched and was not chosen in the consensus round
-            if(fetchedFromClientQueue && !myState.getLatestWrite().equals(collectedWrite)) {
+            if(fetchedFromClientQueue && myState.getLatestWrite().value() != null && !myState.getLatestWrite().equals(collectedWrite)) {
                 broker.addClientRequest(myState.getLatestWrite().value());
                 fetchedFromClientQueue = false;
             }

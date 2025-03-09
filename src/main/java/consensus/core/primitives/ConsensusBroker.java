@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static consensus.core.model.ConsensusPayload.ConsensusType.READ;
@@ -32,23 +33,23 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     private final ConcurrentLinkedQueue<Transaction> clientRequests = new ConcurrentLinkedQueue<>();
     private final ExecutionModule executionModule;
     private final Map<Integer, Consensus> activeConsensusInstances = new HashMap<>();
-    private final AtomicInteger currentConsensusRound = new AtomicInteger(1);
+    private final AtomicInteger currentConsensusRound = new AtomicInteger(0);
     private final List<Observer<ConsensusOutcomeDto>> consensusOutcomeObservers;
 
 
     public ConsensusBroker(Process myProcess, Process[] peers, Link link, int byzantineProcesses, KeyService keyService) {
-        consensusMessageQueues = new ConcurrentHashMap<>();
-        decidedMessages = new LinkedBlockingQueue<>();
+        this.consensusMessageQueues = new ConcurrentHashMap<>();
+        this.decidedMessages = new LinkedBlockingQueue<>();
         this.consensusOutcomeObservers = new ArrayList<>();
         this.myProcess = myProcess;
         this.peers = peers;
-        this.executor = Executors.newFixedThreadPool(10);
+        this.executor = Executors.newFixedThreadPool(4);
         this.link = link;
         this.byzantineProcesses = byzantineProcesses;
         this.keyService = keyService;
         this.epoch = 0;
         this.executionModule = new ExecutionModule(decidedMessages);
-        executionModule.start();
+        this.executionModule.start();
         link.addObserver(this);
     }
 
@@ -59,49 +60,65 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
         logger.info("P{}: Received {} message from P{}",
                 myProcess.getId(), cPayload.getCType(), cPayload.getSenderId());
         // If the consensus round does not have a queue, create a new one
-        BlockingQueue<?> oldQueue = consensusMessageQueues.putIfAbsent(cPayload.getConsensusId(), new LinkedBlockingQueue<>());
-        if(oldQueue == null) {
+        if(needToCollect(cPayload.getConsensusId())) {
+            consensusMessageQueues.putIfAbsent(cPayload.getConsensusId(), new LinkedBlockingQueue<>());
+            int consensusRoundId = cPayload.getConsensusId();
+            updateConsensusRound(consensusRoundId);
             executor.execute(() -> {
-                currentConsensusRound.set(cPayload.getConsensusId());
+                logger.info("P{}: Creating consensus instance round {}", myProcess.getId(), cPayload.getConsensusId());
                 Consensus consensusRound;
-                if(!activeConsensusInstances.containsKey(cPayload.getConsensusId())) {
-                    consensusRound = new Consensus(cPayload.getConsensusId(), this, myProcess, peers, keyService, link, epoch, byzantineProcesses);
-                    activeConsensusInstances.put(consensusRound.getId(), consensusRound);
+                if(!activeConsensusInstances.containsKey(consensusRoundId)) {
+                    consensusRound = new Consensus(consensusRoundId, this, myProcess, peers, keyService, link, epoch, byzantineProcesses);
+                    activeConsensusInstances.put(consensusRoundId, consensusRound);
                 } else {
-                    consensusRound = activeConsensusInstances.get(cPayload.getConsensusId());
+                    consensusRound = activeConsensusInstances.get(consensusRoundId);
                     consensusRound.clearEpochState();
                 }
                 try {
-                    Transaction deliveredMessage = consensusRound.collect(cPayload.getConsensusId());
+                    Transaction deliveredMessage = consensusRound.collect(consensusRoundId);
                     if(deliveredMessage != null) {
                         decidedMessages.add(deliveredMessage);
-                        if(senderFutures.containsKey(cPayload.getConsensusId()))
-                            senderFutures.get(cPayload.getConsensusId()).complete(null);
-                        senderFutures.remove(cPayload.getConsensusId());
-                        activeConsensusInstances.remove(consensusRound.getId());
+                        if(senderFutures.containsKey(consensusRoundId))
+                            senderFutures.get(consensusRoundId).complete(null);
+                        senderFutures.remove(consensusRoundId);
+                        activeConsensusInstances.remove(consensusRoundId);
                     } else {
-                        logger.info("Consensus round {} failed", cPayload.getConsensusId());
+                        logger.info("Consensus round {} failed", consensusRoundId);
                     }
-                    notifyObservers(new ConsensusOutcomeDto(cPayload.getConsensusId(), deliveredMessage));
+                    notifyObservers(new ConsensusOutcomeDto(consensusRoundId, deliveredMessage));
                 } catch (Exception e) {
                     logger.error("P{}: Error collecting messages: {}", myProcess.getId(), e.getMessage());
-                    if(senderFutures.containsKey(cPayload.getConsensusId()))
-                        senderFutures.get(cPayload.getConsensusId()).completeExceptionally(e);
+                    if(senderFutures.containsKey(consensusRoundId))
+                        senderFutures.get(consensusRoundId).completeExceptionally(e);
                 } finally {
-                    consensusMessageQueues.remove(cPayload.getConsensusId());
+                    consensusMessageQueues.remove(consensusRoundId);
                 }
             });
         }
         try {
-            consensusMessageQueues.get(cPayload.getConsensusId()).put(cPayload);
+            if(consensusMessageQueues.containsKey(cPayload.getConsensusId()))
+                consensusMessageQueues.get(cPayload.getConsensusId()).put(cPayload);
         } catch(InterruptedException e) {
             throw new RuntimeException(e);
         }
     }
 
+    private void updateConsensusRound(int proposedRound) {
+        if(proposedRound > currentConsensusRound.get())
+            currentConsensusRound.set(proposedRound);
+    }
+
+    private boolean needToCollect(int consensusId) {
+        return consensusId > currentConsensusRound.get() || abortedConsensus(consensusId);
+    }
+
+    private boolean abortedConsensus(int consensusId) {
+        return activeConsensusInstances.containsKey(consensusId) && consensusMessageQueues.get(consensusId) == null;
+    }
+
     public CompletableFuture<Void> startConsensus() throws LinkException {
         int myId = myProcess.getId();
-        int consensusId = currentConsensusRound.getAndIncrement();
+        int consensusId = currentConsensusRound.get() + 1;
         ConsensusPayload cPayload = new ConsensusPayload(myId, consensusId, READ, null, keyService);
         CompletableFuture<Void> future = new CompletableFuture<>();
         senderFutures.put(cPayload.getConsensusId(), future);
