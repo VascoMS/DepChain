@@ -22,9 +22,10 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class Link implements AutoCloseable, Subject {
+public class Link implements AutoCloseable, Subject<Message> {
     private static final Logger logger = LoggerFactory.getLogger(Link.class);
-    private final DatagramSocket socket;
+    private final DatagramSocket processSocket;
+    private final DatagramSocket clientSocket;
     private final Process myProcess;
     private final Map<Integer, Process> peers;
     private final CollapsingSet acksList;
@@ -32,7 +33,7 @@ public class Link implements AutoCloseable, Subject {
     private final BlockingQueue<SignedMessage> messageQueue;
     private final KeyService keyService;
     private final int baseSleepTime;
-    private final List<Observer> observers;
+    private final List<Observer<Message>> observers;
     private boolean running;
 
     public Link(Process myProcess, Process[] peers, int baseSleepTime) throws Exception {
@@ -45,7 +46,8 @@ public class Link implements AutoCloseable, Subject {
             this.peers.put(p.getId(), p);
         }
         try {
-            this.socket = new DatagramSocket(myProcess.getPort(), InetAddress.getByName(myProcess.getHost()));
+            this.processSocket = new DatagramSocket(myProcess.getPort(), InetAddress.getByName(myProcess.getHost()));
+            this.clientSocket = new DatagramSocket(myProcess.getClientPort(), InetAddress.getByName(myProcess.getHost()));
         } catch (Exception e) {
             throw new LinkException(ErrorMessages.LinkCreationError, e);
         }
@@ -55,13 +57,15 @@ public class Link implements AutoCloseable, Subject {
 
         Thread receiverThread = new Thread(this::messageReceiver);
         Thread socketThread = new Thread(this::socketReceiver);
+        Thread clientThread = new Thread(this::clientReceiver);
         this.running = true;
         receiverThread.start();
         socketThread.start();
+        clientThread.start();
     }
 
     public void send(int nodeId, Message message) throws LinkException {
-        if (socket.isClosed()) {
+        if (processSocket.isClosed()) {
             throw new LinkException(ErrorMessages.LinkClosedException);
         }
         message.setMessageId(messageCounter.getAndIncrement());
@@ -106,16 +110,23 @@ public class Link implements AutoCloseable, Subject {
             // Sign the message to make sure link is authenticated
             byte[] bytes = new Gson().toJson(message).getBytes();
             DatagramPacket packet = new DatagramPacket(bytes, bytes.length, host, port);
-            socket.send(packet);
+            processSocket.send(packet);
         } catch (Exception e) {
             logger.error(ErrorMessages.SendingError.getMessage(), e);
         }
     }
 
-    private DatagramPacket listenOnSocket() throws IOException {
+    private DatagramPacket listenOnProcessSocket() throws IOException {
         byte[] buf = new byte[65535];
         DatagramPacket packet = new DatagramPacket(buf, buf.length);
-        socket.receive(packet);
+        processSocket.receive(packet);
+        return packet;
+    }
+
+    private DatagramPacket listenOnClientSocket() throws IOException {
+        byte[] buf = new byte[65535];
+        DatagramPacket packet = new DatagramPacket(buf, buf.length);
+        clientSocket.receive(packet);
         return packet;
     }
 
@@ -125,7 +136,7 @@ public class Link implements AutoCloseable, Subject {
                 myProcess.getId(), message.getMessageId(), message.getSenderId());
     }
 
-    private void handleNonAckMessage(SignedMessage message) throws Exception {
+    private void handleNonAckMessage(SignedMessage message, String destinationType) throws Exception {
         logger.info("P{}: Message {} {} received from node P{}.",
                 myProcess.getId(), message.getType(), message.getMessageId(), message.getSenderId());
 
@@ -134,25 +145,34 @@ public class Link implements AutoCloseable, Subject {
             Process sender = peers.get(message.getSenderId());
             String senderHost = sender.getHost();
             int senderPort = sender.getPort();
-
-            SignedMessage signedResponse = new SignedMessage(
-                    myProcess.getId(), message.getSenderId(), message.getMessageId(),
-                    Message.Type.ACK, keyService.loadPrivateKey("p" + myProcess.getId())
+            sendAck (
+                    message.getSenderId(),
+                    message.getMessageId(),
+                    senderHost,
+                    senderPort,
+                    destinationType
             );
-            unreliableSend(InetAddress.getByName(senderHost), senderPort, signedResponse);
-            logger.info("P{}: ACK {} sent to node P{}",
-                    myProcess.getId(), message.getMessageId(), message.getSenderId());
         }
 
         // Notify observers of the received message
         notifyObservers(message);
     }
 
+    private void sendAck(int senderId, int messageId, String host, int port, String destinationType) throws Exception {
+        SignedMessage signedResponse = new SignedMessage(
+                myProcess.getId(), senderId, messageId,
+                Message.Type.ACK, keyService.loadPrivateKey("p" + myProcess.getId())
+        );
+        unreliableSend(InetAddress.getByName(host), port, signedResponse);
+        logger.info("P{}: ACK {} sent to node {}{}",
+                myProcess.getId(), messageId, destinationType, senderId);
+    }
+
     private void socketReceiver() {
         logger.info("P{}: Started listening on socket.", myProcess.getId());
-        while(running && !socket.isClosed()) {
+        while(running && !processSocket.isClosed()) {
             try {
-                DatagramPacket packet = listenOnSocket();
+                DatagramPacket packet = listenOnProcessSocket();
                 byte[] buffer = Arrays.copyOfRange(packet.getData(), 0, packet.getLength());
                 String json = new String(buffer);
                 SignedMessage message = new Gson().fromJson(json, SignedMessage.class);
@@ -166,10 +186,41 @@ public class Link implements AutoCloseable, Subject {
         }
     }
 
+    private void clientReceiver() {
+        logger.info("P{}: Started listening for client.", myProcess.getId());
+
+        while (running && !clientSocket.isClosed()) {
+            try {
+                DatagramPacket packet = listenOnClientSocket();
+                byte[] buffer = Arrays.copyOfRange(packet.getData(), 0, packet.getLength());
+                String json = new String(buffer);
+                SignedMessage message = new Gson().fromJson(json, SignedMessage.class);
+                PublicKey peerPublicKey = keyService.loadPublicKey("c" + message.getSenderId());
+                boolean messageIsAuthentic = SecurityUtil.verifySignature(message, peerPublicKey);
+
+                if (!messageIsAuthentic) {
+                    logger.error("P{}: Message {} received from node C{} is not authentic.",
+                            myProcess.getId(), message.getMessageId(), message.getSenderId());
+                    continue;
+                }
+
+                if (message.getType() == Message.Type.ACK) {
+                    handleAckMessage(message);
+                } else {
+                    handleNonAckMessage(message, "C");
+                }
+            } catch (Exception e) {
+                if (running) {
+                    logger.error("Error in message receiver: {}", e.getMessage(), e);
+                }
+            }
+        }
+    }
+
     private void messageReceiver() {
         logger.info("P{}: Started listening.", myProcess.getId());
 
-        while (running && !socket.isClosed()) {
+        while (running && !processSocket.isClosed()) {
             try {
                 SignedMessage message = messageQueue.take();
                 PublicKey peerPublicKey = keyService.loadPublicKey("p" + message.getSenderId());
@@ -184,7 +235,7 @@ public class Link implements AutoCloseable, Subject {
                 if (message.getType() == Message.Type.ACK) {
                     handleAckMessage(message);
                 } else {
-                    handleNonAckMessage(message);
+                    handleNonAckMessage(message, "P");
                 }
             } catch (Exception e) {
                 if (running) {
@@ -193,6 +244,8 @@ public class Link implements AutoCloseable, Subject {
             }
         }
     }
+
+
 
     @Override
     public void addObserver(Observer observer) {
@@ -216,7 +269,7 @@ public class Link implements AutoCloseable, Subject {
     @Override
     public void close() {
         running = false;
-        socket.close();
+        processSocket.close();
     }
 
 }

@@ -1,6 +1,5 @@
 package consensus.core.model;
 
-import com.google.gson.Gson;
 import lombok.Getter;
 import lombok.Setter;
 

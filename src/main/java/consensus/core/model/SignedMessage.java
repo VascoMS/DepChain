@@ -1,6 +1,5 @@
 package consensus.core.model;
 
-import consensus.core.model.Message;
 import consensus.util.SecurityUtil;
 import lombok.Getter;
 

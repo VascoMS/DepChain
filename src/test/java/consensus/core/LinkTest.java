@@ -12,7 +12,6 @@ import consensus.util.Process;
 
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Semaphore;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -27,8 +26,8 @@ public class LinkTest {
     @BeforeAll
     public static void startLinks() throws Exception {
         // Assemble
-        aliceProcess = new Process(1, "localhost", 1024, 1024);
-        bobProcess = new Process(2, "localhost", 1025, 1025);
+        aliceProcess = new Process(1, "localhost", 1024, 1124);
+        bobProcess = new Process(2, "localhost", 1025, 1125);
 
         aliceLink = new Link(aliceProcess, new Process[]{bobProcess}, 100);
         bobLink = new Link(bobProcess, new Process[]{aliceProcess}, 100);
@@ -43,19 +42,16 @@ public class LinkTest {
         Message aliceMessage = new Message(1, 2, Message.Type.UNICAST, "hello");
 
         // Assert
-        Observer bobObserver = new Observer() {
-            @Override
-            public void update(Message message) {
-                try {
-                    System.out.println("Received message.");
-                    // Assert
-                    assertEquals(message, aliceMessage);
-                    latch.countDown();
-                } catch(AssertionError failure) {
-                    failures.add(failure);
-                }
-
+        Observer<Message> bobObserver = message -> {
+            try {
+                System.out.println("Received message.");
+                // Assert
+                assertEquals(message, aliceMessage);
+                latch.countDown();
+            } catch(AssertionError failure) {
+                failures.add(failure);
             }
+
         };
 
         bobLink.addObserver(bobObserver);
@@ -78,18 +74,14 @@ public class LinkTest {
         Message aliceMessage = new Message(1, 1, Message.Type.UNICAST, "hello");
 
         // Assert
-        Observer aliceObserver = new Observer() {
-            @Override
-            public void update(Message message) {
-                try {
-                    System.out.println("Received message.");
-                    // Assert
-                    assertEquals(message, aliceMessage);
-                    latch.countDown();
-                } catch(AssertionError failure) {
-                    failures.add(failure);
-                }
-
+        Observer<Message> aliceObserver = message -> {
+            try {
+                System.out.println("Received message.");
+                // Assert
+                assertEquals(message, aliceMessage);
+                latch.countDown();
+            } catch(AssertionError failure) {
+                failures.add(failure);
             }
         };
 
@@ -108,29 +100,29 @@ public class LinkTest {
     public void sendingToUnknownPeer() {
         assertThrows(
                 LinkException.class,
-                () -> { aliceLink.send(100, new Message(
+                () -> aliceLink.send(100, new Message(
                         1,
                         100,
                         Message.Type.UNICAST,
                         "hello"
-                ));},
+                )),
                 ErrorMessages.NoSuchNodeError.getMessage()
         );
     }
 
     @Test
     public void noSendOrReceiveAfterClose() throws Exception {
-        Process process = new Process(999, "localhost", 1030, 1030);
+        Process process = new Process(999, "localhost", 1030, 1130);
         Link link = new Link(process, new Process[] {aliceProcess, bobProcess}, 200);
         link.close();
         assertThrows(
                 LinkException.class,
-                () -> { link.send(1, new Message(
+                () -> link.send(1, new Message(
                         999,
                         1,
                         Message.Type.UNICAST,
                         "hello"
-                ));},
+                )),
                 ErrorMessages.LinkClosedException.getMessage()
         );
     }

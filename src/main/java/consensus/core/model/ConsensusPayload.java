@@ -5,15 +5,13 @@ import consensus.util.SecurityUtil;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.util.UUID;
-
 
 @Getter
 public class ConsensusPayload {
 
     @Setter
     private int senderId;
-    private final String consensusId;
+    private final int consensusId;
     @Setter
     private ConsensusType cType;
     private final String content;
@@ -23,26 +21,7 @@ public class ConsensusPayload {
         READ, STATE, COLLECTED, WRITE, ACCEPT
     }
 
-    public ConsensusPayload(int senderId, ConsensusType cType, String content, int myId, KeyService keyService) {
-        try {
-            this.senderId = senderId;
-            this.consensusId = UUID.randomUUID().toString();
-            this.cType = cType;
-            this.content = content;
-            if(cType == ConsensusType.STATE || cType == ConsensusType.COLLECTED) {
-                this.signature = SecurityUtil.signConsensusPayload(
-                        senderId, consensusId, cType, content,
-                        keyService.loadPrivateKey("p" + myId)
-                );
-            } else {
-                this.signature = null;
-            }
-        } catch(Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    public ConsensusPayload(int senderId, String consensusId, ConsensusType cType, String content, int myId, KeyService keyService) {
+    public ConsensusPayload(int senderId, int consensusId, ConsensusType cType, String content, KeyService keyService) {
         try {
             this.senderId = senderId;
             this.consensusId = consensusId;
@@ -51,7 +30,7 @@ public class ConsensusPayload {
             if(cType == ConsensusType.STATE || cType == ConsensusType.COLLECTED) {
                 this.signature = SecurityUtil.signConsensusPayload(
                         senderId, consensusId, cType, content,
-                        keyService.loadPrivateKey("p" + myId)
+                        keyService.loadPrivateKey("p" + senderId)
                 );
             } else {
                 this.signature = null;
@@ -61,9 +40,9 @@ public class ConsensusPayload {
         }
     }
 
-    public ConsensusPayload(int senderId, ConsensusType cType, String content, String signature) {
+    public ConsensusPayload(int senderId, int consensusId, ConsensusType cType, String content, String signature) {
         this.senderId = senderId;
-        this.consensusId = UUID.randomUUID().toString();
+        this.consensusId = consensusId;
         this.cType = cType;
         this.content = content;
         this.signature = signature;

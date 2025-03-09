@@ -1,13 +1,16 @@
 package consensus.core;
 
-import consensus.core.model.Transaction;
-import consensus.core.model.WriteState;
+import com.google.gson.Gson;
+import consensus.core.model.*;
 import consensus.core.primitives.ConsensusBroker;
 import consensus.core.primitives.Link;
+import consensus.util.Observer;
 import consensus.util.Process;
 import consensus.util.SecurityUtil;
 import org.junit.jupiter.api.*;
 
+import java.util.HashMap;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
@@ -36,10 +39,10 @@ public class ConsensusTest {
     @BeforeAll
     public static void startLinks() throws Exception {
         // Assemble
-        Process aliceProcess = new Process(0, "localhost", 1024, 1024);
-        Process bobProcess = new Process(1, "localhost", 1025, 1025);
-        Process carlProcess = new Process(2, "localhost", 1026, 1026);
-        Process jeffProcess = new Process(3, "localhost", 1027, 1027);
+        Process aliceProcess = new Process(0, "localhost", 1024, 1124);
+        Process bobProcess = new Process(1, "localhost", 1025, 1125);
+        Process carlProcess = new Process(2, "localhost", 1026, 1126);
+        Process jeffProcess = new Process(3, "localhost", 1027, 1127);
 
         aliceState = new WriteState();
         bobState = new WriteState();
@@ -110,37 +113,33 @@ public class ConsensusTest {
         // Assemble
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
-        ConcurrentLinkedQueue<Thread> threads = new ConcurrentLinkedQueue<>();
 
         CountDownLatch latch = new CountDownLatch(4);
-        CountDownLatch finishBroadcastLatch = new CountDownLatch(1);
 
         Transaction transaction = generateTransaction("hello.");
         aliceBroker.addClientRequest(transaction);
 
-        // Assert
-        for(ConsensusBroker broker :
-                new ConsensusBroker[]{aliceBroker, bobBroker, carlBroker, jeffBroker}) {
-            threads.add(new Thread(() -> {
-                try {
-                    finishBroadcastLatch.await();
-                    assertTrue(broker.getExecutedTransactions().contains(transaction.id()));
-                } catch (Throwable e) {
-                    if(e instanceof AssertionError) {
-                        failures.add((AssertionError) e);
-                    } else if(e instanceof Exception) {
-                        errors.add((Exception) e);
-                    }
-                } finally {
-                    latch.countDown();
+        Observer<ConsensusOutcomeDto> tester = outcome -> {
+            try {
+                assertEquals(outcome.decision().id(), transaction.id());
+            } catch (Throwable e) {
+                if (e instanceof AssertionError) {
+                    failures.add((AssertionError) e);
+                } else if (e instanceof Exception) {
+                    errors.add((Exception) e);
                 }
-            }));
-        }
-        threads.forEach(Thread::start);
+            } finally {
+                latch.countDown();
+            }
+        };
+
+        aliceBroker.addObserver(tester);
+        bobBroker.addObserver(tester);
+        carlBroker.addObserver(tester);
+        jeffBroker.addObserver(tester);
 
         // Act
-        aliceBroker.startConsensus().get();
-        finishBroadcastLatch.countDown();
+        aliceBroker.startConsensus();
         latch.await();
 
         if(!failures.isEmpty()) {
@@ -150,6 +149,11 @@ public class ConsensusTest {
         if(!errors.isEmpty()) {
             throw errors.peek();
         }
+
+        aliceBroker.removeObserver(tester);
+        bobBroker.removeObserver(tester);
+        carlBroker.removeObserver(tester);
+        jeffBroker.removeObserver(tester);
     }
 
     @Test
@@ -157,10 +161,8 @@ public class ConsensusTest {
         // Assemble
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
-        ConcurrentLinkedQueue<Thread> threads = new ConcurrentLinkedQueue<>();
 
         CountDownLatch latch = new CountDownLatch(4);
-        CountDownLatch finishBroadcastLatch = new CountDownLatch(1);
 
         Transaction aliceTransaction = generateTransaction("hello.");
         Transaction bobTransaction = generateTransaction("hell-o");
@@ -170,29 +172,29 @@ public class ConsensusTest {
         bobBroker.addClientRequest(bobTransaction);
         carlBroker.addClientRequest(carlTransaction);
 
-        // Assert
-        for(ConsensusBroker broker :
-                new ConsensusBroker[]{aliceBroker, bobBroker, carlBroker, jeffBroker}) {
-            threads.add(new Thread(() -> {
-                try {
-                    finishBroadcastLatch.await();
-                    assertTrue(broker.getExecutedTransactions().contains(aliceTransaction.id()));
-                } catch (Throwable e) {
-                    if(e instanceof AssertionError) {
-                        failures.add((AssertionError) e);
-                    } else if(e instanceof Exception) {
-                        errors.add((Exception) e);
-                    }
-                } finally {
-                    latch.countDown();
+        Observer<ConsensusOutcomeDto> tester = outcome -> {
+            try {
+                assertEquals(outcome.decision().id(), aliceTransaction.id());
+            } catch (Throwable e) {
+                if (e instanceof AssertionError) {
+                    failures.add((AssertionError) e);
+                } else if (e instanceof Exception) {
+                    errors.add((Exception) e);
                 }
-            }));
-        }
-        threads.forEach(Thread::start);
+            } finally {
+                latch.countDown();
+            }
+        };
+
+        aliceBroker.addObserver(tester);
+        bobBroker.addObserver(tester);
+        carlBroker.addObserver(tester);
+        jeffBroker.addObserver(tester);
+
 
         // Act
-        aliceBroker.startConsensus().get();
-        finishBroadcastLatch.countDown();
+        aliceBroker.startConsensus();
+
         latch.await();
 
         if(!failures.isEmpty()) {
@@ -202,67 +204,91 @@ public class ConsensusTest {
         if(!errors.isEmpty()) {
             throw errors.peek();
         }
+
+        aliceBroker.removeObserver(tester);
+        bobBroker.removeObserver(tester);
+        carlBroker.removeObserver(tester);
+        jeffBroker.removeObserver(tester);
     }
 
-    /*
     @Test
-    public void consensusWithSeveralEpochs() throws Exception {
+    public void differentCollectedConsensus() throws Exception {
         // Assemble
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
-        ConcurrentLinkedQueue<Thread> threads = new ConcurrentLinkedQueue<>();
 
         CountDownLatch latch = new CountDownLatch(4);
-        CountDownLatch finishBroadcastLatch = new CountDownLatch(1);
 
         Transaction aliceTransaction = generateTransaction("hello.");
-        Transaction bobTransaction = generateTransaction("hell-o");
-        Transaction carlTransaction = generateTransaction("he-llo");
-
-        skipEpochs(2);
-
+        Transaction aliceByzantineTransaction = generateTransaction("hell-o");
+        
         WritePair aliceWritePair = new WritePair(0, aliceTransaction);
-        WritePair bobWritePair = new WritePair(2, bobTransaction);
-        WritePair carlWritePair = new WritePair(1, carlTransaction);
+        WritePair aliceByzantineWritePair = new WritePair(0, aliceByzantineTransaction);
 
-        aliceState.setLatestWrite(aliceWritePair);
-        aliceState.addToWriteSet(aliceWritePair);
-        aliceState.addToWriteSet(bobWritePair);
+        WriteState aliceState = new WriteState(aliceWritePair, List.of(aliceWritePair));
+        WriteState aliceByzantineState = new WriteState(aliceByzantineWritePair, List.of());
 
-        bobState.setLatestWrite(bobWritePair);
-        bobState.addToWriteSet(aliceWritePair);
-        bobState.addToWriteSet(bobWritePair);
+        ConsensusPayload aliceStatePayload = new ConsensusPayload(
+                0, 999, ConsensusPayload.ConsensusType.STATE, new Gson().toJson(aliceState), keyService
+        );
+        ConsensusPayload aliceByzantineStatePayload = new ConsensusPayload(
+                0, aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.STATE, new Gson().toJson(aliceByzantineState), keyService
+        );
+        ConsensusPayload bobStatePayload = new ConsensusPayload(
+                1, aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.STATE, new Gson().toJson(new WriteState()), keyService
+        );
+        ConsensusPayload carlStatePayload = new ConsensusPayload(
+                2, aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.STATE,new Gson().toJson(new WriteState()), keyService
+        );
+        ConsensusPayload jeffStatePayload = new ConsensusPayload(
+                3, aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.STATE, new Gson().toJson(new WriteState()), keyService
+        );
 
-        carlState.setLatestWrite(carlWritePair);
-        carlState.addToWriteSet(aliceWritePair);
-        carlState.addToWriteSet(carlWritePair);
+        HashMap<Integer, ConsensusPayload> normalStates = new HashMap<>();
+        normalStates.put(0, aliceStatePayload);
+        normalStates.put(2, carlStatePayload);
+        normalStates.put(3, jeffStatePayload);
 
-        jeffState.setLatestWrite(bobWritePair);
-        jeffState.addToWriteSet(bobWritePair);
+        ConsensusPayload normalCollectedPayload = new ConsensusPayload(
+                0, aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.COLLECTED, new Gson().toJson(normalStates), keyService
+        );
+        HashMap<Integer, ConsensusPayload> byzantineStates = new HashMap<>();
+        byzantineStates.put(0, aliceByzantineStatePayload);
+        byzantineStates.put(1, bobStatePayload);
+        byzantineStates.put(3, jeffStatePayload);
 
-        // Assert
-        for(ConsensusBroker broker :
-                new ConsensusBroker[]{aliceBroker, bobBroker, carlBroker, jeffBroker}) {
-            threads.add(new Thread(() -> {
-                try {
-                    finishBroadcastLatch.await();
-                    assertTrue(broker.getExecutedTransactions().contains(bobTransaction.id()));
-                } catch (Throwable e) {
-                    if(e instanceof AssertionError) {
-                        failures.add((AssertionError) e);
-                    } else if(e instanceof Exception) {
-                        errors.add((Exception) e);
-                    }
-                } finally {
-                    latch.countDown();
+        ConsensusPayload byzantineCollectedPayload = new ConsensusPayload(
+                0, aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.COLLECTED, new Gson().toJson(byzantineStates), keyService
+        );
+
+        Message normalMessage = new Message(0, Message.Type.CONSENSUS, new Gson().toJson(normalCollectedPayload));
+        Message byzantineMessage = new Message(0, Message.Type.CONSENSUS, new Gson().toJson(byzantineCollectedPayload));
+
+        Observer<ConsensusOutcomeDto> tester = outcome -> {
+            try {
+                assertNull(outcome.decision());
+            } catch (Throwable e) {
+                if (e instanceof AssertionError) {
+                    failures.add((AssertionError) e);
+                } else if (e instanceof Exception) {
+                    errors.add((Exception) e);
                 }
-            }));
-        }
-        threads.forEach(Thread::start);
+            } finally {
+                latch.countDown();
+            }
+        };
+
+        aliceBroker.addObserver(tester);
+        bobBroker.addObserver(tester);
+        carlBroker.addObserver(tester);
+        jeffBroker.addObserver(tester);
 
         // Act
-        carlBroker.startConsensus().get();
-        finishBroadcastLatch.countDown();
+        aliceLink.send(0, normalMessage);
+        aliceLink.send(1, byzantineMessage);
+        aliceLink.send(2, byzantineMessage);
+        aliceLink.send(3, normalMessage);
+
         latch.await();
 
         if(!failures.isEmpty()) {
@@ -272,20 +298,12 @@ public class ConsensusTest {
         if(!errors.isEmpty()) {
             throw errors.peek();
         }
+
+        aliceBroker.removeObserver(tester);
+        bobBroker.removeObserver(tester);
+        carlBroker.removeObserver(tester);
+        jeffBroker.removeObserver(tester);
     }
-
-
-    private void skipEpochs(int increment) {
-        for(int i = 0; i < increment; i++) {
-            aliceBroker.incrementEpoch();
-            bobBroker.incrementEpoch();
-            carlBroker.incrementEpoch();
-            jeffBroker.incrementEpoch();
-        }
-    }
-
-     */
-
 
     private Transaction generateTransaction(String content) throws Exception {
         String transactionId = UUID.randomUUID().toString();

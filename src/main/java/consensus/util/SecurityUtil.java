@@ -90,7 +90,7 @@ public class SecurityUtil {
 
     public static String signConsensusPayload(
             int senderId,
-            String consensusId,
+            int consensusId,
             ConsensusPayload.ConsensusType cType,
             String content,
             PrivateKey privateKey
@@ -100,7 +100,7 @@ public class SecurityUtil {
 
         byte[][] dataToSign = {
                 intToBytes(senderId),
-                consensusId.getBytes(),
+                Integer.toString(consensusId).getBytes(),
                 cType.name().getBytes(),
                 content != null ? content.getBytes() : null
         };
@@ -110,7 +110,7 @@ public class SecurityUtil {
 
     public static boolean verifySignature(
             int senderId,
-            String consensusId,
+            int consensusId,
             ConsensusPayload.ConsensusType cType,
             String content,
             String signature,
@@ -121,7 +121,7 @@ public class SecurityUtil {
 
         byte[][] dataToVerify = {
                 intToBytes(senderId),
-                consensusId.getBytes(),
+                Integer.toString(consensusId).getBytes(),
                 cType.name().getBytes(),
                 content != null ? content.getBytes() : null
         };

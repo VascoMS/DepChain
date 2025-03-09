@@ -1,9 +1,7 @@
 package consensus.util;
 
-import consensus.core.model.Message;
-
-public interface Subject {
-    void addObserver(Observer observer);
-    void removeObserver(Observer observer);
-    void notifyObservers(Message message);
+public interface Subject<T> {
+    void addObserver(Observer<T> observer);
+    void removeObserver(Observer<T> observer);
+    void notifyObservers(T message);
 }

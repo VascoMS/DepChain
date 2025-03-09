@@ -7,19 +7,19 @@ import consensus.core.model.*;
 import consensus.util.Process;
 import consensus.exception.LinkException;
 import consensus.util.SecurityUtil;
+import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Type;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class Consensus {
     // TODO: Figure out the epochs madness (If they are bound to a consensus instance or are continuous across rounds)
     private static final Logger logger = LoggerFactory.getLogger(Consensus.class);
+    @Getter
+    private final int id;
     private final ConsensusBroker broker;
     private final Process myProcess;
     private final Process[] peers;
@@ -30,11 +30,13 @@ public class Consensus {
     private final ConcurrentHashMap<Integer, ConsensusPayload> peersStates;
     private final ConcurrentHashMap<Integer, WritePair> peersWrites;
     private final ConcurrentHashMap<Integer, String> peersAccepts;
+    private boolean fetchedFromClientQueue;
     private final int currentLeaderId;
     private final int byzantineProcesses;
     private Transaction decision;
 
     public Consensus(
+            int id,
             ConsensusBroker broker,
             Process myProcess,
             Process[] peers,
@@ -43,6 +45,7 @@ public class Consensus {
             int epoch,
             int byzantineProcesses
     ) {
+        this.id = id;
         this.broker = broker;
         this.myProcess = myProcess;
         this.peers = peers;
@@ -55,15 +58,17 @@ public class Consensus {
         this.peersWrites = new ConcurrentHashMap<>();
         this.peersAccepts = new ConcurrentHashMap<>();
         this.byzantineProcesses = byzantineProcesses;
+        this.fetchedFromClientQueue = false;
     }
 
-    private void handleRead(int myId, int senderId, String consensusId) throws LinkException {
+    private void handleRead(int myId, int senderId, int consensusId) throws LinkException {
         if(senderId == currentLeaderId) {
             logger.info("P{}: Received READ Request. Sending state to leader P{}.",
                     myId, currentLeaderId);
             if(myState.getLatestWrite() == null){
                 // TODO: Don't forget to return requests to queue if they aren't decided
                 WritePair writePair = new WritePair(epoch, broker.fetchClientRequest());
+                this.fetchedFromClientQueue = true;
                 myState.setLatestWrite(writePair);
             }
             ConsensusPayload statePayload = new ConsensusPayload(
@@ -71,7 +76,6 @@ public class Consensus {
                     consensusId,
                     ConsensusPayload.ConsensusType.STATE,
                     new Gson().toJson(myState),
-                    myId,
                     keyService
             );
             // Send to leader
@@ -92,7 +96,6 @@ public class Consensus {
                     receivedPayload.getConsensusId(),
                     ConsensusPayload.ConsensusType.COLLECTED,
                     new Gson().toJson(peersStates),
-                    myId,
                     keyService
             );
             sendConsensusMessage(myId, collectedPayload);
@@ -128,7 +131,6 @@ public class Consensus {
         return true;
     }
 
-
     private boolean handleWrite(int myId, ConsensusPayload receivedPayload) throws LinkException {
         logger.info("P{}: Received WRITE Message from leader P{}.",
                 myId, receivedPayload.getSenderId());
@@ -146,19 +148,23 @@ public class Consensus {
                 return false;
             }
             logger.info("P{}: Sending ACCEPT message, value {}", myId, collectedWrite.value());
+            // Return request to queue if it had been fetched and was not chosen in the consensus round
+            if(fetchedFromClientQueue && !myState.getLatestWrite().equals(collectedWrite)) {
+                broker.addClientRequest(myState.getLatestWrite().value());
+                fetchedFromClientQueue = false;
+            }
             myState.setLatestWrite(collectedWrite);
             ConsensusPayload collectedPayload = new ConsensusPayload(
                     myId,
                     receivedPayload.getConsensusId(),
                     ConsensusPayload.ConsensusType.ACCEPT,
                     new Gson().toJson(collectedWrite.value()),
-                    myId,
                     keyService
             );
             sendConsensusMessage(myId, collectedPayload);
             return true;
         }
-        if (peersWrites.size() > peers.length + 1) {
+        if (peersWrites.size() == peers.length + 1) {
             logger.info("P{}: Could not reach consensus, abort.", myId);
             return false;
         }
@@ -171,7 +177,7 @@ public class Consensus {
                     transaction, keyService.loadPublicKey("c" + transaction.clientId())
             );
         } catch (Exception e) {
-            logger.error("P{}: Error checking transaction signature: {}", myProcess.getId(), e);
+            logger.error("P{}: Error checking transaction signature: {}", myProcess.getId(), e.getMessage());
             return false;
         }
     }
@@ -190,7 +196,7 @@ public class Consensus {
         return false;
     }
 
-    public Transaction collect(String consensusId) throws Exception {
+    public Transaction collect(int consensusId) throws Exception {
         int myId = myProcess.getId();
         boolean delivered = false;
         // Loop to keep receiving messages until delivery can be done.
@@ -266,7 +272,7 @@ public class Consensus {
                 .toList();
     }
 
-    private void sendWriteMessage(int myId, String consensusId, Transaction writeValue, int epoch) throws LinkException {
+    private void sendWriteMessage(int myId, int consensusId, Transaction writeValue, int epoch) throws LinkException {
         logger.info("P{}: Sending WRITE message, timestamp {}, value {}", myId, epoch, writeValue);
 
         WritePair newWrite = new WritePair(epoch, writeValue);
@@ -275,7 +281,6 @@ public class Consensus {
                 consensusId,
                 ConsensusPayload.ConsensusType.WRITE,
                 new Gson().toJson(newWrite),
-                myId,
                 keyService
         );
 
@@ -323,5 +328,23 @@ public class Consensus {
         return epoch % numNodes;
     }
 
+    public void clearEpochState() {
+        peersStates.clear();
+        peersWrites.clear();
+        peersAccepts.clear();
+    }
+
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+        Consensus consensus = (Consensus) o;
+        return epoch == consensus.epoch && currentLeaderId == consensus.currentLeaderId && byzantineProcesses == consensus.byzantineProcesses && Objects.equals(broker, consensus.broker) && Objects.equals(myProcess, consensus.myProcess) && Objects.deepEquals(peers, consensus.peers) && Objects.equals(link, consensus.link) && Objects.equals(keyService, consensus.keyService) && Objects.equals(myState, consensus.myState) && Objects.equals(peersStates, consensus.peersStates) && Objects.equals(peersWrites, consensus.peersWrites) && Objects.equals(peersAccepts, consensus.peersAccepts) && Objects.equals(decision, consensus.decision);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(broker, myProcess, Arrays.hashCode(peers), link, keyService, myState, epoch, peersStates, peersWrites, peersAccepts, currentLeaderId, byzantineProcesses, decision);
+    }
 }
 
