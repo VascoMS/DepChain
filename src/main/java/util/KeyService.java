@@ -31,4 +31,6 @@ public class KeyService {
         logger.info("Loading public key for alias: " + alias);
         return keystore.getCertificate(alias).getPublicKey();
     }
+
+
 }

@@ -3,7 +3,7 @@ package client;
 import util.Process;
 import java.util.Scanner;
 
-// TODO: Remove client private keys from server keystore and create client keystore with client private keys
+
 public class ClientApp {
 
     public static void main(String[] args) {

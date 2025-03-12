@@ -19,7 +19,6 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class Consensus {
-    // TODO: Figure out the epochs madness (If they are bound to a server.consensus instance or are continuous across rounds)
     private static final Logger logger = LoggerFactory.getLogger(Consensus.class);
     @Getter
     private final int id;
@@ -310,6 +309,7 @@ public class Consensus {
     }
 
     private void sendConsensusMessage(int myId, ConsensusPayload collectedPayload) throws LinkException {
+        logger.info("P{}: Sending {} message: {}", myId, collectedPayload.getCType(), collectedPayload.getContent());
         String payloadToSend = new Gson().toJson(collectedPayload);
         // Sending accept to myself
         link.send(

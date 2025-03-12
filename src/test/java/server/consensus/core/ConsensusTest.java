@@ -38,7 +38,9 @@ public class ConsensusTest {
     private static WriteState carlState;
     private static WriteState jeffState;
 
-    private static KeyService keyService;
+    private static KeyService serverKeyService;
+    private static KeyService clientKeyService;
+
 
     @BeforeAll
     public static void startLinks() throws Exception {
@@ -53,30 +55,31 @@ public class ConsensusTest {
         carlState = new WriteState();
         jeffState = new WriteState();
 
-        keyService = new KeyService(SecurityUtil.KEYSTORE_PATH, "mypass");
+        serverKeyService = new KeyService(SecurityUtil.SERVER_KEYSTORE_PATH, "mypass");
+        clientKeyService = new KeyService(SecurityUtil.CLIENT_KEYSTORE_PATH, "mypass");
 
         aliceLink = new Link(
                 aliceProcess,
                 new Process[]{bobProcess, carlProcess, jeffProcess},
-                200, privateKeyPrefix, privateKeyPrefix
+                100, privateKeyPrefix, privateKeyPrefix
         );
 
         bobLink = new Link(
                 bobProcess,
                 new Process[]{aliceProcess, carlProcess, jeffProcess},
-                200, privateKeyPrefix, privateKeyPrefix
+                100, privateKeyPrefix, privateKeyPrefix
         );
 
         carlLink = new Link(
                 carlProcess,
                 new Process[]{bobProcess, aliceProcess, jeffProcess},
-                200, privateKeyPrefix, privateKeyPrefix
+                100, privateKeyPrefix, privateKeyPrefix
         );
 
         jeffLink = new Link(
                 jeffProcess,
                 new Process[]{bobProcess, carlProcess, aliceProcess},
-                200, privateKeyPrefix, privateKeyPrefix
+                100, privateKeyPrefix, privateKeyPrefix
         );
 
         aliceBroker = new ConsensusBroker(
@@ -84,7 +87,7 @@ public class ConsensusTest {
                 new Process[]{bobProcess, carlProcess, jeffProcess},
                 aliceLink,
                 1,
-                keyService,
+                serverKeyService,
                 new StringState()
         );
 
@@ -93,7 +96,7 @@ public class ConsensusTest {
                 new Process[]{aliceProcess, carlProcess, jeffProcess},
                 bobLink,
                 1,
-                keyService,
+                serverKeyService,
                 new StringState()
         );
 
@@ -102,7 +105,7 @@ public class ConsensusTest {
                 new Process[]{bobProcess, aliceProcess, jeffProcess},
                 carlLink,
                 1,
-                keyService,
+                serverKeyService,
                 new StringState()
         );
 
@@ -111,7 +114,7 @@ public class ConsensusTest {
                 new Process[]{bobProcess, carlProcess, aliceProcess},
                 jeffLink,
                 1,
-                keyService,
+                serverKeyService,
                 new StringState()
         );
     }
@@ -237,19 +240,19 @@ public class ConsensusTest {
         WriteState aliceByzantineState = new WriteState(aliceByzantineWritePair, List.of());
 
         ConsensusPayload aliceStatePayload = new ConsensusPayload(
-                0, 999, ConsensusPayload.ConsensusType.STATE, new Gson().toJson(aliceState), keyService
+                0, 999, ConsensusPayload.ConsensusType.STATE, new Gson().toJson(aliceState), serverKeyService
         );
         ConsensusPayload aliceByzantineStatePayload = new ConsensusPayload(
-                0, aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.STATE, new Gson().toJson(aliceByzantineState), keyService
+                0, aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.STATE, new Gson().toJson(aliceByzantineState), serverKeyService
         );
         ConsensusPayload bobStatePayload = new ConsensusPayload(
-                1, aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.STATE, new Gson().toJson(new WriteState()), keyService
+                1, aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.STATE, new Gson().toJson(new WriteState()), serverKeyService
         );
         ConsensusPayload carlStatePayload = new ConsensusPayload(
-                2, aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.STATE,new Gson().toJson(new WriteState()), keyService
+                2, aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.STATE,new Gson().toJson(new WriteState()), serverKeyService
         );
         ConsensusPayload jeffStatePayload = new ConsensusPayload(
-                3, aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.STATE, new Gson().toJson(new WriteState()), keyService
+                3, aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.STATE, new Gson().toJson(new WriteState()), serverKeyService
         );
 
         HashMap<Integer, ConsensusPayload> normalStates = new HashMap<>();
@@ -258,7 +261,7 @@ public class ConsensusTest {
         normalStates.put(3, jeffStatePayload);
 
         ConsensusPayload normalCollectedPayload = new ConsensusPayload(
-                0, aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.COLLECTED, new Gson().toJson(normalStates), keyService
+                0, aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.COLLECTED, new Gson().toJson(normalStates), serverKeyService
         );
         HashMap<Integer, ConsensusPayload> byzantineStates = new HashMap<>();
         byzantineStates.put(0, aliceByzantineStatePayload);
@@ -266,7 +269,7 @@ public class ConsensusTest {
         byzantineStates.put(3, jeffStatePayload);
 
         ConsensusPayload byzantineCollectedPayload = new ConsensusPayload(
-                0, aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.COLLECTED, new Gson().toJson(byzantineStates), keyService
+                0, aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.COLLECTED, new Gson().toJson(byzantineStates), serverKeyService
         );
 
         Message normalMessage = new Message(0, Message.Type.CONSENSUS, new Gson().toJson(normalCollectedPayload));
@@ -316,7 +319,7 @@ public class ConsensusTest {
     private Transaction generateTransaction(String content) throws Exception {
         String transactionId = UUID.randomUUID().toString();
         int clientId = 1;
-        String signature = SecurityUtil.signTransaction(transactionId, clientId, content, keyService.loadPrivateKey("c" + clientId));
+        String signature = SecurityUtil.signTransaction(transactionId, clientId, content, clientKeyService.loadPrivateKey("c" + clientId));
         return new Transaction(transactionId, clientId, content, signature);
     }
 

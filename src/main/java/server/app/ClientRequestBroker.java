@@ -1,4 +1,4 @@
-package server.main;
+package server.app;
 
 import com.google.gson.Gson;
 import common.model.ClientRequest;

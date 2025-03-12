@@ -20,7 +20,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static server.consensus.core.model.ConsensusPayload.ConsensusType.READ;
 
 public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutcomeDto> {
-    // TODO: Add client request handling
     private static final Logger logger = LoggerFactory.getLogger(ConsensusBroker.class);
     private final ExecutorService executor;
     private final ConcurrentHashMap<Integer, BlockingQueue<ConsensusPayload>> consensusMessageQueues;
@@ -112,7 +111,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     }
 
     private boolean needToCollect(int consensusId) {
-        return consensusId > currentConsensusRound.get() || abortedConsensus(consensusId);
+        return (consensusId > currentConsensusRound.get() && !activeConsensusInstances.containsKey(consensusId)) || abortedConsensus(consensusId);
     }
 
     private boolean abortedConsensus(int consensusId) {

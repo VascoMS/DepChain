@@ -1,6 +1,7 @@
 package common.primitives;
 
 import com.google.gson.Gson;
+import common.model.DeliveryKey;
 import util.KeyService;
 import common.model.Message;
 import common.model.SignedMessage;
@@ -27,6 +28,7 @@ public class Link implements AutoCloseable, Subject<Message> {
     private final DatagramSocket processSocket;
     private final Process myProcess;
     private final Map<Integer, Process> peers;
+    private final Map<DeliveryKey, CollapsingSet> deliveredMessages = new HashMap<>();
     private final CollapsingSet acksList;
     private final AtomicInteger messageCounter;
     private final BlockingQueue<SignedMessage> messageQueue;
@@ -53,7 +55,7 @@ public class Link implements AutoCloseable, Subject<Message> {
         this.myProcess = myProcess;
         this.peers = new HashMap<>();
         this.baseSleepTime = baseSleepTime;
-        this.keyService = new KeyService(SecurityUtil.KEYSTORE_PATH, "mypass");
+        this.keyService = new KeyService(SecurityUtil.SERVER_KEYSTORE_PATH, "mypass");
         this.privateKeyPrefix = privateKeyPrefix;
         this.publicKeyPrefix = publicKeyPrefix;
         this.observers = new ArrayList<>();
@@ -74,8 +76,6 @@ public class Link implements AutoCloseable, Subject<Message> {
         socketThread.start();
         this.running = true;
     }
-
-
 
     public void send(int nodeId, Message message) throws LinkException {
         if (processSocket.isClosed()) {
@@ -165,6 +165,20 @@ public class Link implements AutoCloseable, Subject<Message> {
                 myProcess.getId(), message.getMessageId(), message.getSenderId());
     }
 
+    private boolean checkDelivered(SignedMessage message) {
+        DeliveryKey key = new DeliveryKey(message.getSenderId(), message.getType());
+        if(!deliveredMessages.containsKey(key)) {
+            deliveredMessages.put(key, new CollapsingSet());
+            return false;
+        }
+        return deliveredMessages.get(key).contains(message.getMessageId());
+    }
+
+    private void addDelivered(SignedMessage message) {
+        DeliveryKey key = new DeliveryKey(message.getSenderId(), message.getType());
+        deliveredMessages.get(key).add(message.getMessageId());
+    }
+
     private void handleNonAckMessage(SignedMessage message, String destinationType) throws Exception {
         logger.info("P{}: Message {} {} received from node P{}.",
                 myProcess.getId(), message.getType(), message.getMessageId(), message.getSenderId());
@@ -184,7 +198,10 @@ public class Link implements AutoCloseable, Subject<Message> {
         }
 
         // Notify observers of the received message
-        notifyObservers(message);
+        if(!checkDelivered(message)) {
+            addDelivered(message);
+            notifyObservers(message);
+        }
     }
 
     private void sendAck(int senderId, int messageId, String host, int port, String destinationType) throws Exception {

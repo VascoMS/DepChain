@@ -1,4 +1,4 @@
-package server.main;
+package server.app;
 
 import server.consensus.core.model.State;
 import server.consensus.core.model.StringState;
@@ -12,16 +12,6 @@ import java.util.Arrays;
 
 public class Server {
 
-    private static int basePort;
-    private static int clientBasePort;
-    private static Process myProcess;
-    private static Process[] peers;
-    private static Link processLink;
-    private static ConsensusBroker consensusBroker;
-    private static Link clientLink;
-    private static ClientRequestBroker clientRequestBroker;
-    private static State state;
-
     public static void main(String[] args) {
         // Print received arguments.
         System.out.printf("Received %d arguments%n", args.length);
@@ -32,13 +22,13 @@ public class Server {
         // Check arguments.
         if (args.length < 3) {
             System.err.println("Argument(s) missing!");
-            System.err.printf("Usage: java %s baseport replica-id client-base-port%n", Server.class.getName());
+            System.err.printf("Usage: java %s <baseport replica-id client-base-port%n", Server.class.getName());
             return;
         }
-        state = new StringState();
-        basePort = Integer.parseInt(args[0]);
+        State state = new StringState();
+        int basePort = Integer.parseInt(args[0]);
         int myId = Integer.parseInt(args[1]);
-        clientBasePort = Integer.parseInt(args[2]);
+        int clientBasePort = Integer.parseInt(args[2]);
         Process[] processes = {
                 new Process(0, "localhost", basePort),
                 new Process(1, "localhost", basePort + 1),
@@ -48,28 +38,28 @@ public class Server {
         Process[] clients = {
                 new Process(1, "localhost", clientBasePort)
         };
-        myProcess = Arrays.stream(processes).filter(process -> process.getId() == myId).findFirst().get();
-        peers = Arrays.stream(processes).filter(process -> process.getId() != myId).toArray(Process[]::new);
+        Process myProcess = Arrays.stream(processes).filter(process -> process.getId() == myId).findFirst().get();
+        Process[] peers = Arrays.stream(processes).filter(process -> process.getId() != myId).toArray(Process[]::new);
         try {
-            processLink = new Link(myProcess, peers, 200, "p", "p");
-            consensusBroker = new ConsensusBroker(
+            Link processLink = new Link(myProcess, peers, 100, "p", "p");
+            ConsensusBroker consensusBroker = new ConsensusBroker(
                     myProcess,
                     peers,
                     processLink,
                     calculateByzantineFailures(processes.length),
-                    new KeyService(SecurityUtil.KEYSTORE_PATH, "mypass"),
+                    new KeyService(SecurityUtil.SERVER_KEYSTORE_PATH, "mypass"),
                     state
             );
             processLink.addObserver(consensusBroker);
 
-            clientLink = new Link(
+            Link clientLink = new Link(
                     new Process(myProcess.getId(), myProcess.getHost(), myProcess.getPort() + 100),
                     clients,
-                    200,
+                    100,
                     "p",
                     "c"
             );
-            clientRequestBroker = new ClientRequestBroker(
+            ClientRequestBroker clientRequestBroker = new ClientRequestBroker(
                     myProcess.getId(),
                     clientLink,
                     consensusBroker,

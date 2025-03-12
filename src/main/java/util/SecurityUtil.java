@@ -11,10 +11,11 @@ import java.nio.ByteBuffer;
 import java.security.*;
 import java.util.Base64;
 
-public class    SecurityUtil {
+public class SecurityUtil {
 
     private static final Logger logger = LoggerFactory.getLogger(SecurityUtil.class);
-    public static final String KEYSTORE_PATH = "src/main/java/server.consensus/keys/keystore.p12";
+    public static final String SERVER_KEYSTORE_PATH = "src/main/java/server/consensus/keys/keystore.p12";
+    public static final String CLIENT_KEYSTORE_PATH = "src/main/java/client/keys/keystore.p12";
 
     // Generic method to create signature
     private static String createSignature(Signature signer, byte[][] dataToSign) throws Exception {

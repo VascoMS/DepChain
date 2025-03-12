@@ -2,7 +2,7 @@ package server.consensus.core.model;
 
 import common.model.Transaction;
 
-public class StringState implements State{
+public class StringState implements State {
     private final StringBuilder appendOnlyString;
 
     public StringState() {
@@ -16,5 +16,4 @@ public class StringState implements State{
     public String getCurrentState() {
         return appendOnlyString.toString();
     }
-
 }

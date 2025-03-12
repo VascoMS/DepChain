@@ -85,8 +85,10 @@ public class CollapsingSet implements Set<Integer> {
                     this.floor = newFloor++;
                 }
                 return removeReturn;
-            } else
+            } else if(integer > this.floor + 1) {
                 return this.set.add(integer);
+            }
+            return false;
         }
     }
 
