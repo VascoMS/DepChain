@@ -9,6 +9,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import util.Process;
+import util.SecurityUtil;
 
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
@@ -31,8 +32,8 @@ public class LinkTest {
         aliceProcess = new Process(1, "localhost", 1024);
         bobProcess = new Process(2, "localhost", 1025);
 
-        aliceLink = new Link(aliceProcess, new Process[]{bobProcess}, 100, keyPrefix, keyPrefix);
-        bobLink = new Link(bobProcess, new Process[]{aliceProcess}, 100, keyPrefix, keyPrefix);
+        aliceLink = new Link(aliceProcess, new Process[]{bobProcess}, 100, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
+        bobLink = new Link(bobProcess, new Process[]{aliceProcess}, 100, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
     }
 
     @Test
@@ -115,7 +116,7 @@ public class LinkTest {
     @Test
     public void noSendOrReceiveAfterClose() throws Exception {
         Process process = new Process(999, "localhost", 1030);
-        Link link = new Link(process, new Process[] {aliceProcess, bobProcess}, 200, keyPrefix, keyPrefix);
+        Link link = new Link(process, new Process[] {aliceProcess, bobProcess}, 200, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
         link.close();
         assertThrows(
                 LinkException.class,

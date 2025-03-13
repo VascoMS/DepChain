@@ -20,6 +20,8 @@ import java.util.concurrent.CountDownLatch;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class ConsensusTest {
 
     private static Link aliceLink;
@@ -61,25 +63,25 @@ public class ConsensusTest {
         aliceLink = new Link(
                 aliceProcess,
                 new Process[]{bobProcess, carlProcess, jeffProcess},
-                100, privateKeyPrefix, privateKeyPrefix
+                100, privateKeyPrefix, privateKeyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
         bobLink = new Link(
                 bobProcess,
                 new Process[]{aliceProcess, carlProcess, jeffProcess},
-                100, privateKeyPrefix, privateKeyPrefix
+                100, privateKeyPrefix, privateKeyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
         carlLink = new Link(
                 carlProcess,
                 new Process[]{bobProcess, aliceProcess, jeffProcess},
-                100, privateKeyPrefix, privateKeyPrefix
+                100, privateKeyPrefix, privateKeyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
         jeffLink = new Link(
                 jeffProcess,
                 new Process[]{bobProcess, carlProcess, aliceProcess},
-                100, privateKeyPrefix, privateKeyPrefix
+                100, privateKeyPrefix, privateKeyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
         aliceBroker = new ConsensusBroker(
@@ -120,6 +122,7 @@ public class ConsensusTest {
     }
 
     @Test
+    @Order(1)
     public void simpleConsensus() throws Exception {
         // Assemble
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
@@ -168,6 +171,7 @@ public class ConsensusTest {
     }
 
     @Test
+    @Order(2)
     public void consensusWithSeveralProposes() throws Exception {
         // Assemble
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
@@ -223,6 +227,7 @@ public class ConsensusTest {
     }
 
     @Test
+    @Order(3)
     public void differentCollectedConsensus() throws Exception {
         // Assemble
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
@@ -330,10 +335,10 @@ public class ConsensusTest {
         carlState.clear();
         jeffState.clear();
 
-        aliceBroker.resetEpoch();
+        /* aliceBroker.resetEpoch();
         bobBroker.resetEpoch();
         carlBroker.resetEpoch();
-        jeffBroker.resetEpoch();
+        jeffBroker.resetEpoch(); */
     }
 
     @AfterAll

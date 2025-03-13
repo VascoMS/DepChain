@@ -10,6 +10,8 @@ import util.Process;
 import util.SecurityUtil;
 
 import java.security.PrivateKey;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -22,13 +24,16 @@ class ClientOperations implements Observer<Message> {
     private final Link link;
     private final int myId;
     private final KeyService keyService;
+    private final Map<String, List<ServerResponse>> receivedResponses;
     private final Map<String, CompletableFuture<ServerResponse>> requestMap;
     private final int[] serverIds = {0, 1, 2, 3}; // Known servers
+    private final int byzantineFailures = (serverIds.length - 1) / 3;
 
-    public ClientOperations(Process myProcess) throws Exception {
+    public ClientOperations(Process myProcess, Process[] serverProcesses)  throws Exception {
         this.myId = myProcess.getId();
-        this.link = new Link(myProcess, 100, "c", "c");
+        this.link = new Link(myProcess, serverProcesses, 100, "c", "p", KEYSTORE_PATH);
         this.keyService = new KeyService(KEYSTORE_PATH, KEYSTORE_PASS);
+        this.receivedResponses = new ConcurrentHashMap<>();
         this.requestMap = new ConcurrentHashMap<>();
     }
 
@@ -61,6 +66,7 @@ class ClientOperations implements Observer<Message> {
             }
         } catch (LinkException e) {
             System.out.println("Error in sending request to servers: " + e.getMessage());
+            e.printStackTrace();
             return null;
         }
     }
@@ -68,6 +74,7 @@ class ClientOperations implements Observer<Message> {
     private CompletableFuture<ServerResponse> sendToServers(ClientRequest clientRequest) throws LinkException{
         CompletableFuture<ServerResponse> future = new CompletableFuture<>();
         requestMap.put(clientRequest.id(), future);
+        receivedResponses.put(clientRequest.id(), new ArrayList<>());
         for (int serverId : serverIds) {
             Message message = new Message(
                     myId,
@@ -95,6 +102,17 @@ class ClientOperations implements Observer<Message> {
             System.out.println("No future found for message: " + response.requestId());
             return;
         }
-        future.complete(response);
+        List<ServerResponse> responses = receivedResponses.get(response.requestId());
+        if(responses == null) {
+            System.out.println("Received response, but ignoring: " + response.requestId());
+            return;
+        }
+        responses.add(response);
+        if(responses.stream().filter(r -> r == response).count() > byzantineFailures) {
+            future.complete(response);
+        }
+        if((long) responses.size() == serverIds.length) {
+            future.complete(new ServerResponse(response.requestId(), false, null));
+        }
     }
 }

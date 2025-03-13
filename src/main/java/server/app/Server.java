@@ -29,19 +29,19 @@ public class Server {
         int basePort = Integer.parseInt(args[0]);
         int myId = Integer.parseInt(args[1]);
         int clientBasePort = Integer.parseInt(args[2]);
-        Process[] processes = {
-                new Process(0, "localhost", basePort),
-                new Process(1, "localhost", basePort + 1),
-                new Process(2, "localhost", basePort + 2),
-                new Process(3, "localhost", basePort + 3)
-        };
+            Process[] processes = {
+                    new Process(0, "localhost", basePort),
+                    new Process(1, "localhost", basePort + 1),
+                    new Process(2, "localhost", basePort + 2),
+                    new Process(3, "localhost", basePort + 3)
+            };
         Process[] clients = {
                 new Process(1, "localhost", clientBasePort)
         };
         Process myProcess = Arrays.stream(processes).filter(process -> process.getId() == myId).findFirst().get();
         Process[] peers = Arrays.stream(processes).filter(process -> process.getId() != myId).toArray(Process[]::new);
         try {
-            Link processLink = new Link(myProcess, peers, 100, "p", "p");
+            Link processLink = new Link(myProcess, peers, 100, "p", "p", SecurityUtil.SERVER_KEYSTORE_PATH);
             ConsensusBroker consensusBroker = new ConsensusBroker(
                     myProcess,
                     peers,
@@ -57,7 +57,8 @@ public class Server {
                     clients,
                     100,
                     "p",
-                    "c"
+                    "c",
+                    SecurityUtil.SERVER_KEYSTORE_PATH
             );
             ClientRequestBroker clientRequestBroker = new ClientRequestBroker(
                     myProcess.getId(),
@@ -66,7 +67,6 @@ public class Server {
                     state
             );
             clientLink.addObserver(clientRequestBroker);
-
             processLink.waitForTermination();
             clientLink.waitForTermination();
         } catch(Exception e) {

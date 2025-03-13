@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static server.consensus.core.model.ConsensusPayload.ConsensusType.READ;
 
@@ -28,15 +29,16 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     private final Process myProcess;
     private final Process[] peers;
     private final Link link;
+    private int totalEpochs;
     private final int byzantineProcesses;
     private final KeyService keyService;
-    private int epoch;
-    private final ConcurrentLinkedQueue<Transaction> clientRequests = new ConcurrentLinkedQueue<>();
+    private final BlockingQueue<Transaction> clientRequests = new LinkedBlockingQueue<>();
     private final ExecutionModule executionModule;
     private final Map<Integer, Consensus> activeConsensusInstances = new HashMap<>();
     private final AtomicInteger currentConsensusRound = new AtomicInteger(0);
     private final List<Observer<ConsensusOutcomeDto>> consensusOutcomeObservers;
-
+    private final BlockingQueue<ConsensusEpochPair> leaderQueue = new LinkedBlockingQueue<>();
+    private final ReentrantLock leaderLock = new ReentrantLock();
 
     public ConsensusBroker(Process myProcess, Process[] peers, Link link, int byzantineProcesses, KeyService keyService, State state) {
         this.consensusMessageQueues = new ConcurrentHashMap<>();
@@ -46,9 +48,9 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
         this.peers = peers;
         this.executor = Executors.newFixedThreadPool(4);
         this.link = link;
+        this.totalEpochs = 0;
         this.byzantineProcesses = byzantineProcesses;
         this.keyService = keyService;
-        this.epoch = 0;
         this.executionModule = new ExecutionModule(decidedMessages, state);
         this.executionModule.start();
         link.addObserver(this);
@@ -68,11 +70,10 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
                 logger.info("P{}: Creating server.consensus instance round {}", myProcess.getId(), cPayload.getConsensusId());
                 Consensus consensusRound;
                 if(!activeConsensusInstances.containsKey(consensusRoundId)) {
-                    consensusRound = new Consensus(consensusRoundId, this, myProcess, peers, keyService, link, epoch, byzantineProcesses);
+                    consensusRound = new Consensus(consensusRoundId, this, myProcess, peers, keyService, link, byzantineProcesses, totalEpochs);
                     activeConsensusInstances.put(consensusRoundId, consensusRound);
                 } else {
                     consensusRound = activeConsensusInstances.get(consensusRoundId);
-                    consensusRound.clearEpochState();
                 }
                 try {
                     Transaction deliveredMessage = consensusRound.collect(consensusRoundId);
@@ -119,8 +120,12 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     }
 
     public CompletableFuture<Void> startConsensus() throws LinkException {
-        int myId = myProcess.getId();
         int consensusId = currentConsensusRound.get() + 1;
+        return initConsensus(consensusId);
+    }
+
+    private CompletableFuture<Void> initConsensus(int consensusId) throws LinkException {
+        int myId = myProcess.getId();
         ConsensusPayload cPayload = new ConsensusPayload(myId, consensusId, READ, null, keyService);
         CompletableFuture<Void> future = new CompletableFuture<>();
         senderFutures.put(cPayload.getConsensusId(), future);
@@ -145,27 +150,30 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
         return consensusMessageQueues.get(consensusId).take();
     }
 
-    protected Transaction fetchClientRequest() {
+    protected Transaction fetchClientRequest() throws InterruptedException {
         return clientRequests.poll();
     }
 
     public void addClientRequest(Transaction transaction) {
         clientRequests.add(transaction);
+        //clientRequests.notifyAll();
     }
 
     public Set<String> getExecutedTransactions() {
         return executionModule.getExecutedTransactions();
     }
 
-    public void incrementEpoch() {
-        this.epoch++;
+    public boolean iAmLeader() { return this.totalEpochs % (peers.length + 1) == myProcess.getId(); }
+
+    public boolean checkLeader(int epoch) { return epoch % (peers.length + 1) == myProcess.getId();}
+
+    public void waitForTransaction(String transactionId) throws InterruptedException {
+        executionModule.waitForTransaction(transactionId);
     }
 
-    public void resetEpoch() {
-        this.epoch = 0;
+    protected synchronized void incrementEpoch() {
+        this.totalEpochs++;
     }
-
-    public boolean iAmLeader() { return this.epoch % (peers.length + 1) == myProcess.getId(); }
 
     @Override
     public void addObserver(Observer<ConsensusOutcomeDto> observer) {
@@ -180,7 +188,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     @Override
     public void notifyObservers(ConsensusOutcomeDto outcome) {
         for (Observer<ConsensusOutcomeDto> observer : consensusOutcomeObservers) {
-            logger.info("P{}: Notifying observer of server.consensus {} with result {}",
+            logger.info("P{}: Notifying observer of consensus round {} with result {}",
                     myProcess.getId(), outcome.id(), outcome.decision());
             observer.update(outcome);
         }

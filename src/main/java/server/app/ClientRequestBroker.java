@@ -13,6 +13,10 @@ import util.Observer;
 import common.model.Message;
 import common.primitives.Link;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
+
 public class ClientRequestBroker implements Observer<Message> {
 
     private static final Logger logger = LoggerFactory.getLogger(ClientRequestBroker.class);
@@ -32,6 +36,10 @@ public class ClientRequestBroker implements Observer<Message> {
     public void update(Message message) {
         if(message.getType() != Message.Type.REQUEST) return;
         ClientRequest clientRequest = new Gson().fromJson(message.getPayload(), ClientRequest.class);
+        handleRequest(message.getSenderId(), clientRequest);
+    }
+
+    private void handleRequest(int senderId, ClientRequest clientRequest) {
         ServerResponse serverResponse;
         switch(clientRequest.command()) {
             case READ -> serverResponse = read(clientRequest.id());
@@ -40,17 +48,17 @@ public class ClientRequestBroker implements Observer<Message> {
                     new ServerResponse(
                             clientRequest.id(),
                             false,
-                            "Not supporting " + message.getType()
+                            "Not supporting " + clientRequest.command()
                     );
         }
         Message response = new Message(
                 myId,
-                message.getSenderId(),
+                senderId,
                 Message.Type.REQUEST,
                 new Gson().toJson(serverResponse)
         );
         try {
-            link.send(message.getSenderId(), response);
+            link.send(senderId, response);
         } catch(LinkException e) {
             logger.error("P{}: Error in responding to client: {}", myId, e.getMessage());
         }
@@ -70,6 +78,7 @@ public class ClientRequestBroker implements Observer<Message> {
             } else {
                 logger.info("P{}: Not leader, request stored for consensus", myId);
             }
+            consensusBroker.waitForTransaction(appendTransaction.id());
             return new ServerResponse(clientReqId, true, null);
         } catch(Exception e) {
                logger.error("P{}: Error in append: {}", myId, e.getMessage());

@@ -28,7 +28,8 @@ public class Consensus {
     private final Link link;
     private final KeyService keyService;
     private final WriteState myState;
-    private final int epoch;
+    private int epoch;
+    private final int epochOffset;
     private final ConcurrentHashMap<Integer, ConsensusPayload> peersStates;
     private final ConcurrentHashMap<Integer, WritePair> peersWrites;
     private final ConcurrentHashMap<Integer, String> peersAccepts;
@@ -44,8 +45,8 @@ public class Consensus {
             Process[] peers,
             KeyService keyService,
             Link link,
-            int epoch,
-            int byzantineProcesses
+            int byzantineProcesses,
+            int epochOffset
     ) {
         this.id = id;
         this.broker = broker;
@@ -53,7 +54,8 @@ public class Consensus {
         this.peers = peers;
         this.link = link;
         this.keyService = keyService;
-        this.epoch = epoch;
+        this.epoch = 0;
+        this.epochOffset = epochOffset; // Offset allows leader changes to be reflected in subsequent consensus instances
         this.currentLeaderId = getRoundRobinLeader(epoch, peers.length + 1);
         this.myState = new WriteState();
         this.peersStates = new ConcurrentHashMap<>();
@@ -68,9 +70,13 @@ public class Consensus {
             logger.info("P{}: Received READ Request. Sending state to leader P{}.",
                     myId, currentLeaderId);
             if(myState.getLatestWrite() == null){
-                WritePair writePair = new WritePair(epoch, broker.fetchClientRequest());
-                this.fetchedFromClientQueue = true;
-                myState.setLatestWrite(writePair);
+                try {
+                    WritePair writePair = new WritePair(epoch, broker.fetchClientRequest());
+                    this.fetchedFromClientQueue = true;
+                    myState.setLatestWrite(writePair);
+                } catch (InterruptedException e) {
+                    logger.error("P{}: Error while fetching from client queue.", myId);
+                }
             }
             ConsensusPayload statePayload = new ConsensusPayload(
                     myId,
@@ -110,6 +116,8 @@ public class Consensus {
         // Parse and verify collected state signatures
         HashMap<Integer, ConsensusPayload> collectedStates = parseCollectedStates(receivedPayload);
         if (!verifyCollectedStates(myId, collectedStates)) {
+            epoch++;
+            broker.incrementEpoch();
             return false; // Abort if verification fails
         }
 
@@ -167,6 +175,8 @@ public class Consensus {
         }
         if (peersWrites.size() == peers.length + 1) {
             logger.info("P{}: Could not reach server.consensus, abort.", myId);
+            epoch++;
+            broker.incrementEpoch();
             return false;
         }
         return true;
@@ -285,7 +295,7 @@ public class Consensus {
                 keyService
         );
 
-        myState.getWriteSet().add(newWrite);
+        myState.addToWriteSet(newWrite);
 
         sendConsensusMessage(myId, writePayload);
     }
@@ -326,14 +336,8 @@ public class Consensus {
         }
     }
 
-    public static int getRoundRobinLeader(int epoch, int numNodes){
-        return epoch % numNodes;
-    }
-
-    public void clearEpochState() {
-        peersStates.clear();
-        peersWrites.clear();
-        peersAccepts.clear();
+    public int getRoundRobinLeader(int epoch, int numNodes){
+        return (epoch + epochOffset) % numNodes;
     }
 
 

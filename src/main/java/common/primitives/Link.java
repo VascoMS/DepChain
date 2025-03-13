@@ -40,8 +40,8 @@ public class Link implements AutoCloseable, Subject<Message> {
     private final Thread receiverThread;
     private boolean running;
 
-    public Link(Process myProcess, Process[] peers, int baseSleepTime, String privateKeyPrefix, String publicKeyPrefix) throws Exception {
-        this(myProcess, baseSleepTime, privateKeyPrefix, publicKeyPrefix);
+    public Link(Process myProcess, Process[] peers, int baseSleepTime, String privateKeyPrefix, String publicKeyPrefix, String keyStorePath) throws Exception {
+        this(myProcess, baseSleepTime, privateKeyPrefix, publicKeyPrefix, keyStorePath);
 
         // Add peers if provided
         if (peers != null) {
@@ -51,16 +51,17 @@ public class Link implements AutoCloseable, Subject<Message> {
         }
     }
 
-    public Link(Process myProcess, int baseSleepTime, String privateKeyPrefix, String publicKeyPrefix) throws Exception {
+    public Link(Process myProcess, int baseSleepTime, String privateKeyPrefix, String publicKeyPrefix, String keyStorePath) throws Exception {
         this.myProcess = myProcess;
         this.peers = new HashMap<>();
         this.baseSleepTime = baseSleepTime;
-        this.keyService = new KeyService(SecurityUtil.SERVER_KEYSTORE_PATH, "mypass");
+        this.keyService = new KeyService(keyStorePath, "mypass");
         this.privateKeyPrefix = privateKeyPrefix;
         this.publicKeyPrefix = publicKeyPrefix;
         this.observers = new ArrayList<>();
 
         try {
+            logger.info("P{}: Creating socket on {}:{}", myProcess.getId(), myProcess.getHost(), myProcess.getPort());
             this.processSocket = new DatagramSocket(myProcess.getPort(), InetAddress.getByName(myProcess.getHost()));
         } catch (Exception e) {
             throw new LinkException(ErrorMessages.LinkCreationError, e);
@@ -132,8 +133,8 @@ public class Link implements AutoCloseable, Subject<Message> {
             throws InterruptedException {
         int sleepTime = baseSleepTime;
         for (int attempts = 1; !acksList.contains(message.getMessageId()); attempts++) {
-            logger.info("P{}: Sending message {} {} to {} attempt {}",
-                    myProcess.getId(), message.getType(), message.getMessageId(), destination, attempts);
+            logger.info("P{}: Sending message {} {} to {} {}:{} attempt {}",
+                    myProcess.getId(), message.getType(), message.getMessageId(), destination,host,port, attempts);
             unreliableSend(host, port, signedMessage);
             Thread.sleep(sleepTime);
             sleepTime *= 2;
