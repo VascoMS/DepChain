@@ -1,4 +1,4 @@
-package client;
+package client.app;
 
 import com.google.gson.Gson;
 import common.model.*;
@@ -35,6 +35,7 @@ class ClientOperations implements Observer<Message> {
         this.keyService = new KeyService(KEYSTORE_PATH, KEYSTORE_PASS);
         this.receivedResponses = new ConcurrentHashMap<>();
         this.requestMap = new ConcurrentHashMap<>();
+        link.addObserver(this);
     }
 
     public void append(String value) throws Exception {
@@ -108,7 +109,7 @@ class ClientOperations implements Observer<Message> {
             return;
         }
         responses.add(response);
-        if(responses.stream().filter(r -> r == response).count() > byzantineFailures) {
+        if(responses.stream().filter(r -> r.equals(response)).count() > byzantineFailures) {
             future.complete(response);
         }
         if((long) responses.size() == serverIds.length) {

@@ -50,7 +50,6 @@ public class Server {
                     new KeyService(SecurityUtil.SERVER_KEYSTORE_PATH, "mypass"),
                     state
             );
-            processLink.addObserver(consensusBroker);
 
             Link clientLink = new Link(
                     new Process(myProcess.getId(), myProcess.getHost(), myProcess.getPort() + 100),
@@ -66,7 +65,6 @@ public class Server {
                     consensusBroker,
                     state
             );
-            clientLink.addObserver(clientRequestBroker);
             processLink.waitForTermination();
             clientLink.waitForTermination();
         } catch(Exception e) {

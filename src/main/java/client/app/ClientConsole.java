@@ -1,6 +1,4 @@
-package client;
-
-import common.primitives.Link;
+package client.app;
 
 import java.util.Arrays;
 import java.util.Scanner;

@@ -15,7 +15,6 @@ import common.primitives.Link;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadPoolExecutor;
 
 public class ClientRequestBroker implements Observer<Message> {
 
@@ -24,19 +23,22 @@ public class ClientRequestBroker implements Observer<Message> {
     private final Link link;
     private final ConsensusBroker consensusBroker;
     private final State state;
-    
+    private final ExecutorService executor;
+
     public ClientRequestBroker(int myId, Link link, ConsensusBroker consensusBroker, State state) {
         this.myId = myId;
         this.link = link;
         this.consensusBroker = consensusBroker;
         this.state = state;
+        this.executor = Executors.newSingleThreadExecutor();
+        link.addObserver(this);
     }
-    
+
     @Override
     public void update(Message message) {
         if(message.getType() != Message.Type.REQUEST) return;
         ClientRequest clientRequest = new Gson().fromJson(message.getPayload(), ClientRequest.class);
-        handleRequest(message.getSenderId(), clientRequest);
+        executor.execute(() -> handleRequest(message.getSenderId(), clientRequest));
     }
 
     private void handleRequest(int senderId, ClientRequest clientRequest) {
@@ -63,7 +65,7 @@ public class ClientRequestBroker implements Observer<Message> {
             logger.error("P{}: Error in responding to client: {}", myId, e.getMessage());
         }
     }
-    
+
     private ServerResponse read(String clientReqId) {
         String currentString = state.getCurrentState();
         return new ServerResponse(clientReqId, true, currentString);
@@ -73,7 +75,7 @@ public class ClientRequestBroker implements Observer<Message> {
         try {
             consensusBroker.addClientRequest(appendTransaction);
             if(consensusBroker.iAmLeader()) {
-                consensusBroker.startConsensus().get();
+                consensusBroker.startConsensus();
                 logger.info("P{}: Leader, request now proposed for consensus", myId);
             } else {
                 logger.info("P{}: Not leader, request stored for consensus", myId);
@@ -85,5 +87,5 @@ public class ClientRequestBroker implements Observer<Message> {
                return new ServerResponse(clientReqId, false, "Error: " + e.getMessage());
         }
     }
-    
+
 }

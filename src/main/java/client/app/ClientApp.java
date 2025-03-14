@@ -1,4 +1,4 @@
-package client;
+package client.app;
 
 import util.Process;
 import java.util.Scanner;

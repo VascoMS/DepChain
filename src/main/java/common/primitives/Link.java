@@ -38,6 +38,7 @@ public class Link implements AutoCloseable, Subject<Message> {
     private final int baseSleepTime;
     private final List<Observer<Message>> observers;
     private final Thread receiverThread;
+    private final Thread socketThread;
     private boolean running;
 
     public Link(Process myProcess, Process[] peers, int baseSleepTime, String privateKeyPrefix, String publicKeyPrefix, String keyStorePath) throws Exception {
@@ -70,12 +71,11 @@ public class Link implements AutoCloseable, Subject<Message> {
         this.messageQueue = new LinkedBlockingQueue<>();
         this.acksList = new CollapsingSet();
         this.messageCounter = new AtomicInteger(0);
-
+        this.running = true;
         receiverThread = new Thread(this::messageReceiver);
-        Thread socketThread = new Thread(this::socketReceiver);
+        socketThread = new Thread(this::socketReceiver);
         receiverThread.start();
         socketThread.start();
-        this.running = true;
     }
 
     public void send(int nodeId, Message message) throws LinkException {
@@ -185,7 +185,7 @@ public class Link implements AutoCloseable, Subject<Message> {
                 myProcess.getId(), message.getType(), message.getMessageId(), message.getSenderId());
 
         // Send ACK back to the sender if not me
-        if(message.getSenderId() != myProcess.getId()) {
+        if(message.getSenderId() != myProcess.getId() || message.getType() == Message.Type.REQUEST) {
             Process sender = peers.get(message.getSenderId());
             String senderHost = sender.getHost();
             int senderPort = sender.getPort();
@@ -224,6 +224,8 @@ public class Link implements AutoCloseable, Subject<Message> {
                 String json = new String(buffer);
                 SignedMessage message = new Gson().fromJson(json, SignedMessage.class);
                 messageQueue.add(message);
+                logger.info("P{}: Message {} {} received from node P{} queue size = {}.",
+                        myProcess.getId(), message.getMessageId(), message.getType(), message.getSenderId(), messageQueue.size());
             } catch (Exception e) {
                 if (running) {
                     logger.error("Error in message receiver: {}", e.getMessage(), e);
@@ -264,6 +266,7 @@ public class Link implements AutoCloseable, Subject<Message> {
     public void waitForTermination() {
         try {
             receiverThread.join();
+            socketThread.join();
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -281,6 +284,7 @@ public class Link implements AutoCloseable, Subject<Message> {
 
     @Override
     public void notifyObservers(Message message) {
+        // Be careful not to have a blocking update method in the observer
         for (Observer observer : observers) {
             logger.info("P{}: Notifying observer of message {} {}",
                     myProcess.getId(), message.getType(), message.getMessageId());
