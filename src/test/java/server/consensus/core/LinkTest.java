@@ -32,8 +32,8 @@ public class LinkTest {
         aliceProcess = new Process(1, "localhost", 1024);
         bobProcess = new Process(2, "localhost", 1025);
 
-        aliceLink = new Link(aliceProcess, new Process[]{bobProcess}, 100, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
-        bobLink = new Link(bobProcess, new Process[]{aliceProcess}, 100, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
+        aliceLink = new Link(aliceProcess, new Process[]{bobProcess}, Link.Type.SERVER_TO_SERVER,100, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
+        bobLink = new Link(bobProcess, new Process[]{aliceProcess}, Link.Type.SERVER_TO_SERVER,  100, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
     }
 
     @Test
@@ -116,7 +116,7 @@ public class LinkTest {
     @Test
     public void noSendOrReceiveAfterClose() throws Exception {
         Process process = new Process(999, "localhost", 1030);
-        Link link = new Link(process, new Process[] {aliceProcess, bobProcess}, 200, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
+        Link link = new Link(process, new Process[] {aliceProcess, bobProcess}, Link.Type.SERVER_TO_SERVER, 200, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
         link.close();
         assertThrows(
                 LinkException.class,

@@ -31,7 +31,15 @@ class ClientOperations implements Observer<Message> {
 
     public ClientOperations(Process myProcess, Process[] serverProcesses)  throws Exception {
         this.myId = myProcess.getId();
-        this.link = new Link(myProcess, serverProcesses, 100, "c", "p", KEYSTORE_PATH);
+        this.link = new Link(
+                myProcess,
+                serverProcesses,
+                Link.Type.CLIENT_TO_SERVER,
+                100,
+                "c",
+                "p",
+                KEYSTORE_PATH
+        );
         this.keyService = new KeyService(KEYSTORE_PATH, KEYSTORE_PASS);
         this.receivedResponses = new ConcurrentHashMap<>();
         this.requestMap = new ConcurrentHashMap<>();

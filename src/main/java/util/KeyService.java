@@ -1,5 +1,7 @@
 package util;
 
+import javax.crypto.KeyGenerator;
+import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,5 +34,9 @@ public class KeyService {
         return keystore.getCertificate(alias).getPublicKey();
     }
 
+    public SecretKeySpec generateSecretKey() throws NoSuchAlgorithmException  {
+        KeyGenerator keyGen = KeyGenerator.getInstance("HmacSHA256");
+        return (SecretKeySpec) keyGen.generateKey();
+    }
 
 }
