@@ -2,6 +2,7 @@ package common.primitives;
 
 import com.google.gson.Gson;
 import common.model.DeliveryKey;
+import javax.crypto.SecretKey;
 import util.KeyService;
 import common.model.Message;
 import common.model.SignedMessage;
@@ -76,6 +77,9 @@ public class Link implements AutoCloseable, Subject<Message> {
         socketThread = new Thread(this::socketReceiver);
         receiverThread.start();
         socketThread.start();
+
+        // Start exchanging keys after boot-up.
+        new Thread(this::keyExchanger).start();
     }
 
     public void send(int nodeId, Message message) throws LinkException {
@@ -83,7 +87,9 @@ public class Link implements AutoCloseable, Subject<Message> {
             throw new LinkException(ErrorMessages.LinkClosedException);
         }
 
-        SignedMessage signedMessage = prepareMessage(message);
+        SignedMessage signedMessage = message.getType() == Message.Type.KEY_EXCHANGE
+                ? prepareMessageWithSignature(message)
+                : prepareMessageWithHMAC(message);
 
         if (nodeId == myProcess.getId() && message.getType() != Message.Type.REQUEST) {
             messageQueue.add(signedMessage);
@@ -110,7 +116,9 @@ public class Link implements AutoCloseable, Subject<Message> {
             throw new LinkException(ErrorMessages.LinkClosedException);
         }
 
-        SignedMessage signedMessage = prepareMessage(message);
+        SignedMessage signedMessage = message.getType() == Message.Type.KEY_EXCHANGE
+                ? prepareMessageWithSignature(message)
+                : prepareMessageWithHMAC(message);
 
         try {
             InetAddress nodeHost = InetAddress.getByName(host);
@@ -120,10 +128,20 @@ public class Link implements AutoCloseable, Subject<Message> {
         }
     }
 
-    private SignedMessage prepareMessage(Message message) throws LinkException {
+    private SignedMessage prepareMessageWithSignature(Message message) throws LinkException {
         message.setMessageId(messageCounter.getAndIncrement());
         try {
             return new SignedMessage(message, keyService.loadPrivateKey(privateKeyPrefix + myProcess.getId()));
+        } catch (Exception e) {
+            throw new LinkException(ErrorMessages.SignatureError, e);
+        }
+    }
+
+    private SignedMessage prepareMessageWithHMAC(Message message) throws LinkException {
+        message.setMessageId(messageCounter.getAndIncrement());
+        try {
+            Process process = message.getDestinationId() == myProcess.getId() ? myProcess : peers.get(message.getDestinationId());
+            return new SignedMessage(message, process.getSecretKey());
         } catch (Exception e) {
             throw new LinkException(ErrorMessages.SignatureError, e);
         }
@@ -180,6 +198,23 @@ public class Link implements AutoCloseable, Subject<Message> {
         deliveredMessages.get(key).add(message.getMessageId());
     }
 
+    private void handleKeyExchangeMessage(SignedMessage message) throws Exception {
+        logger.info("P{}: Received key from node P{}.",
+                myProcess.getId(), message.getSenderId());
+
+        if(message.getSenderId() != myProcess.getId()) {
+            // Unwrap the received key.
+            SecretKey secretKey = SecurityUtil.decipherSecretKey(
+                    message.getPayload(),
+                    keyService.loadPrivateKey(privateKeyPrefix + myProcess.getId())
+            );
+
+            peers.get(message.getSenderId()).setSecretKey(secretKey);
+        }
+
+        logger.info("P{}: Key sent by P{} stored.", myProcess.getId(), message.getSenderId());
+    }
+
     private void handleNonAckMessage(SignedMessage message, String destinationType) throws Exception {
         logger.info("P{}: Message {} {} received from node P{}.",
                 myProcess.getId(), message.getType(), message.getMessageId(), message.getSenderId());
@@ -215,6 +250,28 @@ public class Link implements AutoCloseable, Subject<Message> {
                 myProcess.getId(), messageId, destinationType, senderId);
     }
 
+    private void keyExchanger() {
+        logger.info("P{}: Exchanging keys with peers with higher id...", myProcess.getId());
+        Integer[] higherIdPeers = (Integer[]) peers.keySet().stream()
+                .filter(id -> id >= myProcess.getId())
+                .toArray();
+        try {
+            for(Integer peer : higherIdPeers) {
+                SecretKey key = keyService.generateSecretKey();
+                String cipheredKey = SecurityUtil.cipherSecretKey(key, keyService.loadPublicKey(publicKeyPrefix + peer));
+                send(peer, new Message(myProcess.getId(), peer, Message.Type.KEY_EXCHANGE, cipheredKey));
+                if(peer != myProcess.getId())
+                    myProcess.setSecretKey(key);
+                else
+                    peers.get(peer).setSecretKey(key);
+            }
+        } catch (Exception e) {
+            logger.error("Error in exchanging keys: {}", e.getMessage(), e);
+            throw new RuntimeException(e);
+        }
+
+    }
+
     private void socketReceiver() {
         logger.info("P{}: Started listening on socket.", myProcess.getId());
         while (running && !processSocket.isClosed()) {
@@ -241,8 +298,16 @@ public class Link implements AutoCloseable, Subject<Message> {
         while (running && !processSocket.isClosed()) {
             try {
                 SignedMessage message = messageQueue.take();
-                PublicKey peerPublicKey = keyService.loadPublicKey(publicKeyPrefix + message.getSenderId());
-                boolean messageIsAuthentic = SecurityUtil.verifySignature(message, peerPublicKey);
+                boolean messageIsAuthentic;
+                if(message.getType() == Message.Type.KEY_EXCHANGE) {
+                    PublicKey peerPublicKey = keyService.loadPublicKey(publicKeyPrefix + message.getSenderId());
+                    messageIsAuthentic = SecurityUtil.verifySignature(message, peerPublicKey);
+                } else {
+                    SecretKey secretKey = message.getSenderId() == myProcess.getId()
+                            ? myProcess.getSecretKey()
+                            : peers.get(message.getSenderId()).getSecretKey();
+                    messageIsAuthentic = SecurityUtil.verifyHMAC(message, secretKey);
+                }
 
                 if (!messageIsAuthentic) {
                     logger.error("P{}: Message {} received from node P{} is not authentic.",
@@ -253,6 +318,9 @@ public class Link implements AutoCloseable, Subject<Message> {
                 if (message.getType() == Message.Type.ACK) {
                     handleAckMessage(message);
                 } else {
+                    if(message.getType() == Message.Type.KEY_EXCHANGE) {
+                        handleKeyExchangeMessage(message);
+                    }
                     handleNonAckMessage(message, "P");
                 }
             } catch (Exception e) {
