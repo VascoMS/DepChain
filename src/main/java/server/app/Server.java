@@ -41,7 +41,15 @@ public class Server {
         Process myProcess = Arrays.stream(processes).filter(process -> process.getId() == myId).findFirst().get();
         Process[] peers = Arrays.stream(processes).filter(process -> process.getId() != myId).toArray(Process[]::new);
         try {
-            Link processLink = new Link(myProcess, peers, 100, "p", "p", SecurityUtil.SERVER_KEYSTORE_PATH);
+            Link processLink = new Link(
+                    myProcess,
+                    peers,
+                    Link.Type.SERVER_TO_SERVER,
+                    100,
+                    "p",
+                    "p",
+                    SecurityUtil.SERVER_KEYSTORE_PATH
+            );
             ConsensusBroker consensusBroker = new ConsensusBroker(
                     myProcess,
                     peers,
@@ -54,6 +62,7 @@ public class Server {
             Link clientLink = new Link(
                     new Process(myProcess.getId(), myProcess.getHost(), myProcess.getPort() + 100),
                     clients,
+                    Link.Type.SERVER_TO_CLIENT,
                     100,
                     "p",
                     "c",

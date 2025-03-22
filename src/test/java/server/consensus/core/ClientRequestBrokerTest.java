@@ -68,25 +68,25 @@ public class ClientRequestBrokerTest {
 
         aliceProcessLink = new Link(
                 aliceProcess,
-                new Process[]{bobProcess, carlProcess, jeffProcess},
+                new Process[]{bobProcess, carlProcess, jeffProcess}, Link.Type.SERVER_TO_SERVER,
                 100, privateKeyPrefix, privateKeyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
         bobProcessLink = new Link(
                 bobProcess,
-                new Process[]{aliceProcess, carlProcess, jeffProcess},
+                new Process[]{aliceProcess, carlProcess, jeffProcess}, Link.Type.SERVER_TO_SERVER,
                 100, privateKeyPrefix, privateKeyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
         carlProcessLink = new Link(
                 carlProcess,
-                new Process[]{bobProcess, aliceProcess, jeffProcess},
+                new Process[]{bobProcess, aliceProcess, jeffProcess}, Link.Type.SERVER_TO_SERVER,
                 100, privateKeyPrefix, privateKeyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
         jeffProcessLink = new Link(
                 jeffProcess,
-                new Process[]{bobProcess, carlProcess, aliceProcess},
+                new Process[]{bobProcess, carlProcess, aliceProcess}, Link.Type.SERVER_TO_SERVER,
                 100, privateKeyPrefix, privateKeyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
@@ -131,13 +131,13 @@ public class ClientRequestBrokerTest {
 
         clientLink = new Link(
                 clientProcess,
-                new Process[]{aliceClientProcess},
+                new Process[]{aliceClientProcess}, Link.Type.CLIENT_TO_SERVER,
                 100, "c", "p", SecurityUtil.CLIENT_KEYSTORE_PATH
         );
 
         aliceClientLink = new Link(
                 aliceClientProcess,
-                new Process[]{clientProcess},
+                new Process[]{clientProcess}, Link.Type.SERVER_TO_CLIENT,
                 100, "p", "c", SecurityUtil.SERVER_KEYSTORE_PATH
         );
 

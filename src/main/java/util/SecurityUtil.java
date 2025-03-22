@@ -3,7 +3,7 @@ package util;
 import java.util.Objects;
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
-import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
 import server.consensus.core.model.ConsensusPayload;
 import common.model.Message;
 import common.model.SignedMessage;
@@ -50,7 +50,7 @@ public class SecurityUtil {
     }
 
     // Generic method to create HMAC.
-    private static String generateHMAC(Mac mac, byte[][] data) throws Exception {
+    private static String generateHMAC(Mac mac, byte[][] data) {
         // Update with each piece of data
         for(byte[] block: data) {
             if (block != null) {
@@ -62,16 +62,17 @@ public class SecurityUtil {
     }
 
     // Generic method to verify HMAC.
-    private static boolean verifyHMAC(Mac mac, byte[][] data, String receivedHMAC) throws Exception {
+    private static boolean verifyHMAC(Mac mac, byte[][] data, String receivedHMAC) {
         // Generate the HMAC from data received.
         String generatedHMAC = generateHMAC(mac, data);
         // Compare with received.
+        logger.info("Comparing generated HMAC {} with received {}", generatedHMAC, receivedHMAC);
         return Objects.equals(generatedHMAC, receivedHMAC);
     }
 
     // Initialize a HMAC object
-    private static Mac initHMAC(SecretKey secretKey) throws Exception {
-        Mac mac = Mac.getInstance("HMAC-SHA256");
+    private static Mac initHMAC(SecretKeySpec secretKey) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(secretKey);
         return mac;
     }
@@ -91,16 +92,16 @@ public class SecurityUtil {
     }
 
     // Initialize a cipher object for key wrapping
-    private static Cipher initWrapper(PublicKey publicKey) throws Exception {
-        Cipher cipher = Cipher.getInstance("RSA");
-        cipher.init(Cipher.WRAP_MODE, publicKey);
+    private static Cipher initEncrypter(PublicKey publicKey) throws Exception {
+        Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+        cipher.init(Cipher.ENCRYPT_MODE, publicKey);
         return cipher;
     }
 
     // Initialize a cipher object for key unwrapping
-    private static Cipher initUnwrapper(PrivateKey privateKey) throws Exception {
-        Cipher cipher = Cipher.getInstance("RSA");
-        cipher.init(Cipher.UNWRAP_MODE, privateKey);
+    private static Cipher initDecrypter(PrivateKey privateKey) throws Exception {
+        Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+        cipher.init(Cipher.DECRYPT_MODE, privateKey);
         return cipher;
     }
 
@@ -201,7 +202,7 @@ public class SecurityUtil {
         return createSignature(signer, dataToSign);
     }
 
-    public static String generateHMAC(Message message, SecretKey secretKey) throws Exception {
+    public static String generateHMAC(Message message, SecretKeySpec secretKey) throws Exception {
         logger.info("Generating HMAC...");
         Mac mac = initHMAC(secretKey);
         byte[][] data = {
@@ -214,7 +215,7 @@ public class SecurityUtil {
         return generateHMAC(mac, data);
     }
 
-    public static boolean verifyHMAC(SignedMessage message, SecretKey secretKey) throws Exception {
+    public static boolean verifyHMAC(SignedMessage message, SecretKeySpec secretKey) throws Exception {
         logger.info("Verifying HMAC...");
         Mac mac = initHMAC(secretKey);
         byte[][] data = {
@@ -227,20 +228,16 @@ public class SecurityUtil {
         return verifyHMAC(mac, data, message.getIntegrity());
     }
 
-    public static String cipherSecretKey(SecretKey secretKey, PublicKey peerPublicKey) throws Exception {
+    public static String cipherSecretKey(SecretKeySpec secretKey, PublicKey peerPublicKey) throws Exception {
         logger.info("Ciphering key...");
-        Cipher cipher = initWrapper(peerPublicKey);
-        return Base64.getEncoder().encodeToString(cipher.wrap(secretKey));
+        Cipher cipher = initEncrypter(peerPublicKey);
+        return Base64.getEncoder().encodeToString(cipher.doFinal(secretKey.getEncoded()));
     }
 
-    public static SecretKey decipherSecretKey(String cipheredKey, PrivateKey myPrivateKey) throws Exception {
+    public static SecretKeySpec decipherSecretKey(String cipheredKey, PrivateKey myPrivateKey) throws Exception {
         logger.info("Deciphering key...");
-        Cipher cipher = initUnwrapper(myPrivateKey);
-        return (SecretKey) cipher.unwrap(
-                Base64.getDecoder().decode(cipheredKey),
-                "AES",
-                Cipher.SECRET_KEY
-        );
+        Cipher cipher = initDecrypter(myPrivateKey);
+        return new SecretKeySpec(cipher.doFinal(Base64.getDecoder().decode(cipheredKey)), "HmacSHA256");
     }
 
     private static byte[] intToBytes(int value) {
