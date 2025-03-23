@@ -229,7 +229,7 @@ public class ClientRequestBrokerTest {
         String transactionId = UUID.randomUUID().toString();
         int clientId = 1;
         String signature = SecurityUtil.signTransaction(transactionId, clientId, content, clientKeyService.loadPrivateKey("c" + clientId));
-        return new Transaction(transactionId, clientId, content, signature);
+        return new Transaction(transactionId, clientId, clientId + 1, content, signature);
     }
 
     private Message generateAppendRequest(int senderId, int destinationId, Transaction append) {
