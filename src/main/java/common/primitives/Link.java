@@ -97,7 +97,7 @@ public class Link implements AutoCloseable, Subject<Message> {
         socketThread.start();
     }
 
-    public void waitForKeyExchange(int nodeId) {
+    private void waitForKeyExchange(int nodeId) {
         try {
             keyExchangeFutures.putIfAbsent(nodeId, new CompletableFuture<>());
             keyExchangeFutures.get(nodeId).get();
@@ -136,23 +136,6 @@ public class Link implements AutoCloseable, Subject<Message> {
             InetAddress nodeHost = InetAddress.getByName(node.getHost());
             int nodePort = node.getPort();
             sendWithRetry(message, signedMessage, nodeHost, nodePort, "node P" + nodeId);
-        } catch (Exception e) {
-            logger.error(ErrorMessages.SendingError.getMessage(), e);
-        }
-    }
-
-    public void send(String host, int port, Message message) throws LinkException {
-        if (processSocket.isClosed()) {
-            throw new LinkException(ErrorMessages.LinkClosedException);
-        }
-
-        SignedMessage signedMessage = message.getType() == Message.Type.KEY_EXCHANGE
-                ? prepareMessageWithSignature(message)
-                : prepareMessageWithHMAC(message);
-
-        try {
-            InetAddress nodeHost = InetAddress.getByName(host);
-            sendWithRetry(message, signedMessage, nodeHost, port, host + ":" + port);
         } catch (Exception e) {
             logger.error(ErrorMessages.SendingError.getMessage(), e);
         }

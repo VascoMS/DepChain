@@ -1,7 +1,9 @@
 package server.consensus.core;
 
 import common.model.Message;
+import common.primitives.AuthenticatedPerfectLink;
 import common.primitives.Link;
+import common.primitives.LinkType;
 import server.consensus.exception.ErrorMessages;
 import server.consensus.exception.LinkException;
 import util.Observer;
@@ -22,8 +24,8 @@ public class LinkTest {
     private static Process bobProcess;
     private static final String keyPrefix = "p";
 
-    private static Link aliceLink;
-    private static Link bobLink;
+    private static AuthenticatedPerfectLink aliceLink;
+    private static AuthenticatedPerfectLink bobLink;
 
     @BeforeAll
     public static void startLinks() throws Exception {
@@ -32,8 +34,8 @@ public class LinkTest {
         aliceProcess = new Process(1, "localhost", 1024);
         bobProcess = new Process(2, "localhost", 1025);
 
-        aliceLink = new Link(aliceProcess, new Process[]{bobProcess}, Link.Type.SERVER_TO_SERVER,100, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
-        bobLink = new Link(bobProcess, new Process[]{aliceProcess}, Link.Type.SERVER_TO_SERVER,  100, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
+        aliceLink = new AuthenticatedPerfectLink(aliceProcess, new Process[]{bobProcess}, LinkType.SERVER_TO_SERVER,100, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
+        bobLink = new AuthenticatedPerfectLink(bobProcess, new Process[]{aliceProcess}, LinkType.SERVER_TO_SERVER,  100, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
     }
 
     @Test
@@ -131,7 +133,7 @@ public class LinkTest {
     }
 
     @AfterAll
-    public static void stopLinks() {
+    public static void stopLinks() throws Exception {
         aliceLink.close();
         bobLink.close();
     }
