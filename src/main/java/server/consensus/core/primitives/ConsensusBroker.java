@@ -146,8 +146,8 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
         return activeConsensusInstances.get(consensusId);
     }
 
-    protected ConsensusPayload receiveConsensusMessage(int consensusId) throws InterruptedException {
-        return consensusMessageQueues.get(consensusId).take();
+    protected ConsensusPayload receiveConsensusMessage(int consensusId, long timeout) throws InterruptedException {
+        return consensusMessageQueues.get(consensusId).poll(timeout, TimeUnit.MILLISECONDS);
     }
 
     protected Transaction fetchClientRequest() throws InterruptedException {

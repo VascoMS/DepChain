@@ -36,6 +36,7 @@ public class Consensus {
     private boolean fetchedFromClientQueue;
     private final int currentLeaderId;
     private final int byzantineProcesses;
+    private long waitingForMessageTimeout;
     private Transaction decision;
 
     public Consensus(
@@ -63,6 +64,7 @@ public class Consensus {
         this.peersAccepts = new ConcurrentHashMap<>();
         this.byzantineProcesses = byzantineProcesses;
         this.fetchedFromClientQueue = false;
+        this.waitingForMessageTimeout = 1000;
     }
 
     private void handleRead(int myId, int senderId, int consensusId) throws LinkException {
@@ -213,22 +215,36 @@ public class Consensus {
         // Loop to keep receiving messages until delivery can be done.
         while(!delivered) {
             logger.info("P{}: Waiting for message for server.consensus {}...", myProcess.getId(), consensusId);
-            ConsensusPayload payload = broker.receiveConsensusMessage(consensusId);
-            if (payload == null) continue;
-            logger.info("P{}: Collecting Received message {}: {}",
-                    myProcess.getId(), payload.getCType(), payload.getContent());
-            switch (payload.getCType()) {
-                case READ -> handleRead(myId, payload.getSenderId(), payload.getConsensusId());
-                case STATE -> handleState(myId, payload);
-                case COLLECTED -> {
-                    boolean valid = handleCollected(myId, payload);
-                    if(!valid) { return null; }
+            try {
+                ConsensusPayload payload = broker.receiveConsensusMessage(consensusId, waitingForMessageTimeout);
+                // When payload returns null, timeout reached so abort.
+                if (payload == null) {
+                    logger.info("P{}: Consensus aborted due to timeout.", myId);
+                    waitingForMessageTimeout *= 2;
+                    return null;
                 }
-                case WRITE -> {
-                    boolean valid = handleWrite(myId, payload);
-                    if(!valid) { return null; }
+                logger.info("P{}: Collecting Received message {}: {}",
+                        myProcess.getId(), payload.getCType(), payload.getContent());
+                switch (payload.getCType()) {
+                    case READ -> handleRead(myId, payload.getSenderId(), payload.getConsensusId());
+                    case STATE -> handleState(myId, payload);
+                    case COLLECTED -> {
+                        boolean valid = handleCollected(myId, payload);
+                        if (!valid) {
+                            return null;
+                        }
+                    }
+                    case WRITE -> {
+                        boolean valid = handleWrite(myId, payload);
+                        if (!valid) {
+                            return null;
+                        }
+                    }
+                    case ACCEPT -> delivered = handleAccept(myId, payload);
                 }
-                case ACCEPT -> delivered = handleAccept(myId, payload);
+            } catch(InterruptedException e) {
+                logger.error("P{}: Message collection interrupted. {}", myId, e.getMessage());
+                return null;
             }
         }
         return decision;
