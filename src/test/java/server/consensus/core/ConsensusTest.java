@@ -6,6 +6,7 @@ import common.model.Message;
 import server.consensus.core.model.*;
 import server.consensus.core.primitives.ConsensusBroker;
 import common.primitives.Link;
+import server.consensus.test.ConsensusByzantineMode;
 import util.KeyService;
 import util.Observer;
 import util.Process;
@@ -21,7 +22,6 @@ import java.util.concurrent.CountDownLatch;
 import static org.junit.jupiter.api.Assertions.*;
 
 
-@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class ConsensusTest {
 
     private static Link aliceLink;
@@ -35,11 +35,6 @@ public class ConsensusTest {
     private static ConsensusBroker carlBroker;
     private static ConsensusBroker jeffBroker;
 
-    private static WriteState aliceState;
-    private static WriteState bobState;
-    private static WriteState carlState;
-    private static WriteState jeffState;
-
     private static KeyService serverKeyService;
     private static KeyService clientKeyService;
 
@@ -51,11 +46,6 @@ public class ConsensusTest {
         Process bobProcess = new Process(1, "localhost", 1025);
         Process carlProcess = new Process(2, "localhost", 1026);
         Process jeffProcess = new Process(3, "localhost", 1027);
-
-        aliceState = new WriteState();
-        bobState = new WriteState();
-        carlState = new WriteState();
-        jeffState = new WriteState();
 
         serverKeyService = new KeyService(SecurityUtil.SERVER_KEYSTORE_PATH, "mypass");
         clientKeyService = new KeyService(SecurityUtil.CLIENT_KEYSTORE_PATH, "mypass");
@@ -122,7 +112,6 @@ public class ConsensusTest {
     }
 
     @Test
-    @Order(1)
     public void simpleConsensus() throws Exception {
         // Assemble
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
@@ -171,7 +160,6 @@ public class ConsensusTest {
     }
 
     @Test
-    @Order(2)
     public void consensusWithSeveralProposes() throws Exception {
         // Assemble
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
@@ -227,7 +215,156 @@ public class ConsensusTest {
     }
 
     @Test
-    @Order(3)
+    public void quietNonLeaderConsensus() throws Exception {
+        // Assemble
+        ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
+        ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
+
+        CountDownLatch latch = new CountDownLatch(3);
+
+        Transaction aliceTransaction = generateTransaction("hello.");
+        Transaction bobTransaction = generateTransaction("hell-o");
+        Transaction carlTransaction = generateTransaction("he-llo");
+
+        aliceBroker.addClientRequest(aliceTransaction);
+        bobBroker.addClientRequest(bobTransaction);
+        carlBroker.addClientRequest(carlTransaction);
+
+        Observer<ConsensusOutcomeDto> tester = outcome -> {
+            try {
+                assertEquals(outcome.decision().id(), aliceTransaction.id());
+            } catch (Throwable e) {
+                if (e instanceof AssertionError) {
+                    failures.add((AssertionError) e);
+                } else if (e instanceof Exception) {
+                    errors.add((Exception) e);
+                }
+            } finally {
+                latch.countDown();
+            }
+        };
+
+        aliceBroker.addObserver(tester);
+        bobBroker.addObserver(tester);
+        carlBroker.addObserver(tester);
+
+        // Jeff is the byzantine, he'll stop sending messages.
+        jeffBroker.becomeByzantine(ConsensusByzantineMode.DROP_ALL);
+
+        // Act
+        aliceBroker.startConsensus();
+
+        latch.await();
+
+        if(!failures.isEmpty()) {
+            throw failures.peek();
+        }
+
+        if(!errors.isEmpty()) {
+            throw errors.peek();
+        }
+
+        aliceBroker.removeObserver(tester);
+        bobBroker.removeObserver(tester);
+        carlBroker.removeObserver(tester);
+    }
+
+    @Test
+    public void quietLeaderConsensus() throws Exception {
+        // Assemble
+        ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
+        ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
+
+        CountDownLatch nullLatch = new CountDownLatch(3);
+        CountDownLatch successLatch = new CountDownLatch(3);
+
+        Transaction aliceTransaction = generateTransaction("hello.");
+        Transaction bobTransaction = generateTransaction("hell-o");
+        Transaction carlTransaction = generateTransaction("he-llo");
+
+        aliceBroker.addClientRequest(aliceTransaction);
+        bobBroker.addClientRequest(bobTransaction);
+        carlBroker.addClientRequest(carlTransaction);
+
+        Observer<ConsensusOutcomeDto> nullTester = outcome -> {
+            try {
+                assertNull(outcome.decision());
+            } catch (Throwable e) {
+                if (e instanceof AssertionError) {
+                    failures.add((AssertionError) e);
+                } else if (e instanceof Exception) {
+                    errors.add((Exception) e);
+                }
+            } finally {
+                nullLatch.countDown();
+            }
+        };
+
+        bobBroker.addObserver(nullTester);
+        carlBroker.addObserver(nullTester);
+        jeffBroker.addObserver(nullTester);
+
+        // Alice is the byzantine, she'll stop sending messages.
+        aliceBroker.becomeByzantine(ConsensusByzantineMode.DROP_ALL);
+
+        // Act
+        aliceBroker.startConsensus();
+
+        nullLatch.await();
+
+        if(!failures.isEmpty()) {
+            throw failures.peek();
+        }
+
+        if(!errors.isEmpty()) {
+            throw errors.peek();
+        }
+
+        bobBroker.removeObserver(nullTester);
+        carlBroker.removeObserver(nullTester);
+        jeffBroker.removeObserver(nullTester);
+
+        // Assert
+        Observer<ConsensusOutcomeDto> successTester = outcome -> {
+            try {
+                assertEquals(outcome.decision(), bobTransaction);
+            } catch (Throwable e) {
+                if (e instanceof AssertionError) {
+                    failures.add((AssertionError) e);
+                } else if (e instanceof Exception) {
+                    errors.add((Exception) e);
+                }
+            } finally {
+                successLatch.countDown();
+            }
+        };
+
+        bobBroker.addObserver(successTester);
+        carlBroker.addObserver(successTester);
+        jeffBroker.addObserver(successTester);
+
+        // Act (Bob restarting consensus)
+        bobBroker.startConsensus();
+
+        successLatch.await();
+
+        if(!failures.isEmpty()) {
+            throw failures.peek();
+        }
+
+        if(!errors.isEmpty()) {
+            throw errors.peek();
+        }
+
+        bobBroker.removeObserver(successTester);
+        carlBroker.removeObserver(successTester);
+        jeffBroker.removeObserver(successTester);
+
+        // Making alice catch-up with the rest.
+        aliceBroker.skipConsensusRound();
+    }
+
+    @Test
     public void differentCollectedConsensus() throws Exception {
         // Assemble
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
@@ -329,12 +466,12 @@ public class ConsensusTest {
     }
 
     @AfterEach
-    public void clearStates() {
-        aliceState.clear();
-        bobState.clear();
-        carlState.clear();
-        jeffState.clear();
-
+    public void normalize() {
+        for (ConsensusBroker broker: new ConsensusBroker[]{aliceBroker, bobBroker, carlBroker, jeffBroker}) {
+            broker.returnToNormal();
+            broker.resetEpoch();
+            broker.clearClientQueue();
+        }
     }
 
     @AfterAll
