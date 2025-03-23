@@ -185,7 +185,7 @@ public class Consensus {
     private boolean validateTransaction(Transaction transaction) {
         try {
             return SecurityUtil.verifySignature(
-                    transaction, keyService.loadPublicKey("c" + transaction.clientId())
+                    transaction, keyService.loadPublicKey("c" + transaction.from())
             );
         } catch (Exception e) {
             logger.error("P{}: Error checking transaction signature: {}", myProcess.getId(), e.getMessage());

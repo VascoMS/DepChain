@@ -182,8 +182,8 @@ public class SecurityUtil {
 
         byte[][] dataToVerify = {
                 transaction.id().getBytes(),
-                ByteBuffer.allocate(4).putInt(transaction.clientId()).array(),
-                transaction.content() != null ? transaction.content().getBytes() : null
+                ByteBuffer.allocate(4).putInt(transaction.from()).array(),
+                transaction.data() != null ? transaction.data().getBytes() : null
         };
 
         return verifySignature(verifier, dataToVerify, transaction.signature());

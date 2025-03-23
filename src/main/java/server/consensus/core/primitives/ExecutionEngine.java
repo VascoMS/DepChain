@@ -18,9 +18,9 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 @Slf4j
-public class ExecutionModule {
+public class ExecutionEngine {
     // TODO: Handle cases where received transactions don't have the desired precedence (Maybe do it in the consensus module)
-    private static final Logger logger = LoggerFactory.getLogger(ExecutionModule.class);
+    private static final Logger logger = LoggerFactory.getLogger(ExecutionEngine.class);
     private final State state;
     @Getter
     private final Set<String> executedTransactions;
@@ -43,7 +43,7 @@ public class ExecutionModule {
 
     private final HashMap<String, List<WaitForExecutionRequest>> requests;
 
-    public ExecutionModule(BlockingQueue<Transaction> transactionQueue) {
+    public ExecutionEngine(BlockingQueue<Transaction> transactionQueue) {
         this.state = new StringState();
         this.queue = transactionQueue;
         this.executedTransactions = new HashSet<>();
@@ -52,7 +52,7 @@ public class ExecutionModule {
         this.requests = new HashMap<>();
     }
 
-    public ExecutionModule(BlockingQueue<Transaction> transactionQueue, State state) {
+    public ExecutionEngine(BlockingQueue<Transaction> transactionQueue, State state) {
         this.queue = transactionQueue;
         this.state = state;
         this.executedTransactions = new HashSet<>();

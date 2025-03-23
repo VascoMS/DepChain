@@ -33,7 +33,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     private final int byzantineProcesses;
     private final KeyService keyService;
     private final BlockingQueue<Transaction> clientRequests = new LinkedBlockingQueue<>();
-    private final ExecutionModule executionModule;
+    private final ExecutionEngine executionEngine;
     private final Map<Integer, Consensus> activeConsensusInstances = new HashMap<>();
     private final AtomicInteger currentConsensusRound = new AtomicInteger(0);
     private final List<Observer<ConsensusOutcomeDto>> consensusOutcomeObservers;
@@ -51,8 +51,8 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
         this.totalEpochs = 0;
         this.byzantineProcesses = byzantineProcesses;
         this.keyService = keyService;
-        this.executionModule = new ExecutionModule(decidedMessages, state);
-        this.executionModule.start();
+        this.executionEngine = new ExecutionEngine(decidedMessages, state);
+        this.executionEngine.start();
         link.addObserver(this);
     }
 
@@ -160,7 +160,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     }
 
     public Set<String> getExecutedTransactions() {
-        return executionModule.getExecutedTransactions();
+        return executionEngine.getExecutedTransactions();
     }
 
     public boolean iAmLeader() { return this.totalEpochs % (peers.length + 1) == myProcess.getId(); }
@@ -168,7 +168,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     public boolean checkLeader(int epoch) { return epoch % (peers.length + 1) == myProcess.getId();}
 
     public void waitForTransaction(String transactionId) throws InterruptedException {
-        executionModule.waitForTransaction(transactionId);
+        executionEngine.waitForTransaction(transactionId);
     }
 
     protected synchronized void incrementEpoch() {

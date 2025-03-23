@@ -10,7 +10,7 @@ public class StringState implements State {
     }
 
     public void applyTransaction(Transaction transaction) {
-        appendOnlyString.append(transaction.content());
+        appendOnlyString.append(transaction.data());
     }
 
     public String getCurrentState() {
