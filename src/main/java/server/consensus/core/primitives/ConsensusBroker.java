@@ -70,7 +70,8 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
                 try {
                     long currentTime = System.currentTimeMillis();
                     int currentRound = currentConsensusRound.incrementAndGet();
-                    Consensus consensus = new Consensus(currentRound, this, myProcess, peers,
+                    Block proposal = buildBlock();
+                    Consensus consensus = new Consensus(currentRound, proposal,this, myProcess, peers,
                             keyService, link, byzantineProcesses, totalEpochs, byzantineMode);
                     activeConsensusInstances.put(currentRound, consensus);
                     Block decision = iAmLeader() ? consensus.runAsLeader() : consensus.runAsFollower();
@@ -96,7 +97,11 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
         ConsensusPayload cPayload = new Gson().fromJson(message.getPayload(), ConsensusPayload.class);
         logger.info("P{}: Received {} message from P{}",
                 myProcess.getId(), cPayload.getCType(), cPayload.getSenderId());
+        if(currentConsensusRound.get() != cPayload.getConsensusId()) return;
+        consensusMessageQueues.putIfAbsent(cPayload.getConsensusId(), new LinkedBlockingQueue<>());
+        consensusMessageQueues.get(cPayload.getConsensusId()).add(cPayload);
         // If the server consensus round does not have a queue, create a new one
+        /*
         if(needToCollect(cPayload.getConsensusId())) {
             consensusMessageQueues.putIfAbsent(cPayload.getConsensusId(), new LinkedBlockingQueue<>());
             int consensusRoundId = cPayload.getConsensusId();
@@ -142,6 +147,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
         } catch(InterruptedException e) {
             throw new RuntimeException(e);
         }
+        */
     }
 
     public synchronized void skipConsensusRound() {
@@ -162,8 +168,20 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     }
 
 
-    private void buildBlocks() {
+    private Block buildBlock() {
+        List<Transaction> transactions = new ArrayList<>();
+        clientRequests.drainTo(transactions);
+        return new Block (
+                blockchain.getLastBlock().getBlockHash(),
+                transactions,
+                currentConsensusRound.get()
+        );
+    }
 
+    protected void destroyBlock(Block block) {
+        for(Transaction transaction : block.getTransactions()) {
+            clientRequests.add(transaction);
+        }
     }
 
     public Consensus getConsensusInstance(int consensusId) {
@@ -190,7 +208,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     public synchronized boolean checkLeader(int epoch) { return epoch % (peers.length + 1) == myProcess.getId();}
 
     public void waitForTransaction(String transactionId) throws InterruptedException {
-        executionEngine.waitForTransaction(transactionId);
+        // executionEngine.waitForTransaction(transactionId);
     }
 
     protected synchronized void incrementEpoch() {

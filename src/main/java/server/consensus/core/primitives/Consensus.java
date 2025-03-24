@@ -27,6 +27,7 @@ public class Consensus {
     private static final Logger logger = LoggerFactory.getLogger(Consensus.class);
     @Getter
     private final int roundId;
+    private final Block proposal;
     private final ConsensusBroker broker;
     private final Process myProcess;
     private final Process[] peers;
@@ -43,10 +44,11 @@ public class Consensus {
     private final int byzantineProcesses;
     private long waitingForMessageTimeout;
     private final ConsensusByzantineMode byzantineMode;
-    private Transaction decision;
+    private Block decision;
 
     public Consensus(
             int id,
+            Block proposal,
             ConsensusBroker broker,
             Process myProcess,
             Process[] peers,
@@ -57,6 +59,7 @@ public class Consensus {
             ConsensusByzantineMode byzantineMode
     ) {
         this.roundId = id;
+        this.proposal = proposal;
         this.broker = broker;
         this.myProcess = myProcess;
         this.peers = peers;
@@ -80,13 +83,10 @@ public class Consensus {
             logger.info("P{}: Received READ Request. Sending state to leader P{}.",
                     myId, currentLeaderId);
             if(myState.getLatestWrite() == null){
-                try {
-                    WritePair writePair = new WritePair(epoch, broker.fetchClientRequest());
-                    this.fetchedFromClientQueue = true;
-                    myState.setLatestWrite(writePair);
-                } catch (InterruptedException e) {
-                    logger.error("P{}: Error while fetching from client queue.", myId);
-                }
+                WritePair writePair = new WritePair(epoch, proposal);
+                this.fetchedFromClientQueue = true;
+                myState.setLatestWrite(writePair);
+
             }
             ConsensusPayload statePayload = new ConsensusPayload(
                     myId,
@@ -145,7 +145,7 @@ public class Consensus {
                     .toList();
             List<WritePair> writePairs = extractLatestWrites(writeStates);
 
-            Transaction writeValue = decideToWriteValue(myId, writePairs, writeSets, leaderValue);
+            Block writeValue = decideToWriteValue(myId, writePairs, writeSets, leaderValue);
 
             if (writeValue != null) {
                 sendWriteMessage(myId, receivedPayload.getConsensusId(), writeValue, epoch);
@@ -177,7 +177,7 @@ public class Consensus {
             logger.info("P{}: Sending ACCEPT message, value {}", myId, collectedWrite.value());
             // Return request to queue if it had been fetched and was not chosen in the server.consensus round
             if(fetchedFromClientQueue && myState.getLatestWrite().value() != null && !myState.getLatestWrite().equals(collectedWrite)) {
-                broker.addClientRequest(myState.getLatestWrite().value());
+                broker.destroyBlock(proposal);
                 fetchedFromClientQueue = false;
             }
             myState.setLatestWrite(collectedWrite);
@@ -207,7 +207,7 @@ public class Consensus {
                 .filter(m -> m.equals(receivedPayload.getContent()))
                 .count() > 2L * byzantineProcesses) {
             logger.info("P{}: Consensus reached. Decided value: {}", myId, receivedPayload.getContent());
-            decision = new Gson().fromJson(receivedPayload.getContent(), Transaction.class);
+            decision = new Gson().fromJson(receivedPayload.getContent(), Block.class);
             return true;
         }
         if (peersAccepts.size() == peers.length + 1) {
@@ -338,7 +338,7 @@ public class Consensus {
                 .toList();
     }
 
-    private void sendWriteMessage(int myId, int consensusId, Transaction writeValue, int epoch) throws LinkException {
+    private void sendWriteMessage(int myId, int consensusId, Block writeValue, int epoch) throws LinkException {
         logger.info("P{}: Sending WRITE message, timestamp {}, value {}", myId, epoch, writeValue);
 
         WritePair newWrite = new WritePair(epoch, writeValue);
@@ -356,7 +356,7 @@ public class Consensus {
     }
 
 
-    private Transaction decideToWriteValue(int myId, List<WritePair> writePairs, List<List<WritePair>> writeSets, Transaction leaderValue) {
+    private Block decideToWriteValue(int myId, List<WritePair> writePairs, List<List<WritePair>> writeSets, Block leaderValue) {
         WritePair mostRecentWritePair = writePairs.stream()
                 .filter(Objects::nonNull)
                 .max(Comparator.comparingInt(WritePair::timestamp)).orElse(null);

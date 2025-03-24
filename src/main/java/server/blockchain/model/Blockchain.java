@@ -84,7 +84,11 @@ public class Blockchain {
         return true;
     }
 
-    public void addBlock(Block block) {
+    public synchronized void addBlock(Block block) {
         blockchain.add(block);
+    }
+
+    public synchronized Block getLastBlock() {
+        return blockchain.get(blockchain.size() - 1);
     }
 }

@@ -18,7 +18,7 @@ public class Block {
         this.parentHash = parentHash;
         this.transactions = transactions;
         this.timestamp = timestamp;
-        this.blockHash = "TODO: Implement block hash calculation.";
+        this.blockHash = generateBlockHash();
     }
 
     protected String generateBlockHash() {
