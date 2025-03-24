@@ -7,6 +7,7 @@ import server.consensus.core.model.*;
 import server.consensus.core.primitives.ConsensusBroker;
 import common.primitives.Link;
 import server.consensus.test.ConsensusByzantineMode;
+import server.evm.StringState;
 import util.KeyService;
 import util.Observer;
 import util.Process;

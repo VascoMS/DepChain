@@ -1,5 +1,5 @@
 package server.consensus.core.model;
 
-import common.model.Transaction;
+import server.blockchain.model.Block;
 
-public record WritePair(int timestamp, Transaction value) {}
+public record WritePair(int timestamp, Block value) {}

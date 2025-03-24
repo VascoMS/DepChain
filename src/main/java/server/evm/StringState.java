@@ -1,4 +1,4 @@
-package server.consensus.core.model;
+package server.evm;
 
 import common.model.Transaction;
 

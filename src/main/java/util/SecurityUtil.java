@@ -4,6 +4,8 @@ import java.util.Objects;
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+
+import server.blockchain.model.Block;
 import server.consensus.core.model.ConsensusPayload;
 import common.model.Message;
 import common.model.SignedMessage;
@@ -182,7 +184,7 @@ public class SecurityUtil {
 
         byte[][] dataToVerify = {
                 transaction.id().getBytes(),
-                ByteBuffer.allocate(4).putInt(transaction.from()).array(),
+                intToBytes(transaction.from()),
                 transaction.data() != null ? transaction.data().getBytes() : null
         };
 
@@ -240,7 +242,22 @@ public class SecurityUtil {
         return new SecretKeySpec(cipher.doFinal(Base64.getDecoder().decode(cipheredKey)), "HmacSHA256");
     }
 
-    private static byte[] intToBytes(int value) {
+    public static String generateHash(byte[][] data) {
+        logger.info("Generating hash...");
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            for (byte[] d : data) {
+                digest.update(d);
+            }
+            byte[] hash = digest.digest();
+            return Base64.getEncoder().encodeToString(hash);
+        } catch (NoSuchAlgorithmException e) {
+            logger.error("Error generating hash: " + e.getMessage());
+            return null;
+        }
+    }
+
+    public static byte[] intToBytes(int value) {
         return ByteBuffer.allocate(4).putInt(value).array();
     }
 }

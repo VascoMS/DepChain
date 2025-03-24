@@ -1,7 +1,9 @@
 package server.app;
 
-import server.consensus.core.model.State;
-import server.consensus.core.model.StringState;
+import common.primitives.AuthenticatedPerfectLink;
+import common.primitives.LinkType;
+import server.evm.State;
+import server.evm.StringState;
 import server.consensus.core.primitives.ConsensusBroker;
 import common.primitives.Link;
 import util.KeyService;
@@ -41,10 +43,10 @@ public class Server {
         Process myProcess = Arrays.stream(processes).filter(process -> process.getId() == myId).findFirst().get();
         Process[] peers = Arrays.stream(processes).filter(process -> process.getId() != myId).toArray(Process[]::new);
         try {
-            Link processLink = new Link(
+            AuthenticatedPerfectLink processLink = new AuthenticatedPerfectLink(
                     myProcess,
                     peers,
-                    Link.Type.SERVER_TO_SERVER,
+                    LinkType.SERVER_TO_SERVER,
                     100,
                     "p",
                     "p",
@@ -59,10 +61,10 @@ public class Server {
                     state
             );
 
-            Link clientLink = new Link(
+            AuthenticatedPerfectLink clientLink = new AuthenticatedPerfectLink(
                     new Process(myProcess.getId(), myProcess.getHost(), myProcess.getPort() + 100),
                     clients,
-                    Link.Type.SERVER_TO_CLIENT,
+                    LinkType.SERVER_TO_CLIENT,
                     100,
                     "p",
                     "c",

@@ -53,9 +53,13 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
             keyExchangeFutures.putIfAbsent(myProcess.getId(), new CompletableFuture<>());
         }
 
-        // Start exchanging keys after boot-up (Clients don't create keys)
-        if (type != LinkType.CLIENT_TO_SERVER) {
-            new Thread(() -> initiateKeyExchange(peers)).start();
+        stbLink.addObserver(this);
+    }
+
+    public void start() {
+        stbLink.start();
+        if (linkType != LinkType.CLIENT_TO_SERVER) {
+            new Thread(() -> initiateKeyExchange(stbLink.getPeers().values().toArray(new Process[0]))).start();
         }
     }
 

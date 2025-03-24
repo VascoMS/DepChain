@@ -4,9 +4,10 @@ import com.google.gson.Gson;
 import common.model.ClientRequest;
 import common.model.ServerResponse;
 import common.model.Transaction;
+import common.primitives.AuthenticatedPerfectLink;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import server.consensus.core.model.State;
+import server.evm.State;
 import server.consensus.core.primitives.ConsensusBroker;
 import server.consensus.exception.LinkException;
 import util.Observer;
@@ -20,12 +21,12 @@ public class ClientRequestBroker implements Observer<Message> {
 
     private static final Logger logger = LoggerFactory.getLogger(ClientRequestBroker.class);
     private final int myId;
-    private final Link link;
+    private final AuthenticatedPerfectLink link;
     private final ConsensusBroker consensusBroker;
     private final State state;
     private final ExecutorService executor;
 
-    public ClientRequestBroker(int myId, Link link, ConsensusBroker consensusBroker, State state) {
+    public ClientRequestBroker(int myId, AuthenticatedPerfectLink link, ConsensusBroker consensusBroker, State state) {
         this.myId = myId;
         this.link = link;
         this.consensusBroker = consensusBroker;

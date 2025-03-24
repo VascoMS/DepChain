@@ -3,8 +3,12 @@ package server.consensus.core.primitives;
 import com.google.gson.Gson;
 import common.model.Transaction;
 import common.model.Message;
-import common.primitives.Link;
+import common.primitives.AuthenticatedPerfectLink;
+import server.blockchain.model.Block;
+import server.blockchain.model.Blockchain;
 import server.consensus.test.ConsensusByzantineMode;
+import server.evm.ExecutionEngine;
+import server.evm.State;
 import util.KeyService;
 import server.consensus.core.model.*;
 import server.consensus.exception.LinkException;
@@ -17,46 +21,73 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 import static server.consensus.core.model.ConsensusPayload.ConsensusType.READ;
 
 public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutcomeDto> {
     private static final Logger logger = LoggerFactory.getLogger(ConsensusBroker.class);
-    private final ExecutorService executor;
+    private final int blockTime;
     private final ConcurrentHashMap<Integer, BlockingQueue<ConsensusPayload>> consensusMessageQueues;
-    private final BlockingQueue<Transaction> decidedMessages;
     private final ConcurrentHashMap<Integer, CompletableFuture<Void>> senderFutures = new ConcurrentHashMap<>();
     private final Process myProcess;
     private final Process[] peers;
-    private final Link link;
+    private final AuthenticatedPerfectLink link;
     private int totalEpochs;
     private final int byzantineProcesses;
     private final KeyService keyService;
     private final BlockingQueue<Transaction> clientRequests = new LinkedBlockingQueue<>();
-    private final ExecutionEngine executionEngine;
+    private final Blockchain blockchain;
     private final Map<Integer, Consensus> activeConsensusInstances = new HashMap<>();
     private final AtomicInteger currentConsensusRound = new AtomicInteger(0);
+    private long lastTimestamp;
     private final List<Observer<ConsensusOutcomeDto>> consensusOutcomeObservers;
     private ConsensusByzantineMode byzantineMode;
-    private final BlockingQueue<ConsensusEpochPair> leaderQueue = new LinkedBlockingQueue<>();
-    private final ReentrantLock leaderLock = new ReentrantLock();
 
-    public ConsensusBroker(Process myProcess, Process[] peers, Link link, int byzantineProcesses, KeyService keyService, State state) {
+    public ConsensusBroker(Process myProcess, Process[] peers, AuthenticatedPerfectLink link, int byzantineProcesses, KeyService keyService, Blockchain blockchain, int blockTime) {
         this.consensusMessageQueues = new ConcurrentHashMap<>();
-        this.decidedMessages = new LinkedBlockingQueue<>();
         this.consensusOutcomeObservers = new ArrayList<>();
         this.myProcess = myProcess;
         this.peers = peers;
-        this.executor = Executors.newFixedThreadPool(4);
+        this.blockchain = blockchain;
+        this.blockTime = 12000;
         this.link = link;
         this.totalEpochs = 0;
         this.byzantineProcesses = byzantineProcesses;
         this.keyService = keyService;
-        this.executionEngine = new ExecutionEngine(decidedMessages, state);
-        this.executionEngine.start();
         this.byzantineMode = ConsensusByzantineMode.NORMAL;
         link.addObserver(this);
+    }
+
+
+    public void start() {
+        //TODO: Add mechanism to abort round after blocktime
+        this.lastTimestamp = (int) System.currentTimeMillis();
+        new Thread (() -> {
+            while(true) {
+                try {
+                    long currentTime = System.currentTimeMillis();
+                    int currentRound = currentConsensusRound.incrementAndGet();
+                    Consensus consensus = new Consensus(currentRound, this, myProcess, peers,
+                            keyService, link, byzantineProcesses, totalEpochs, byzantineMode);
+                    activeConsensusInstances.put(currentRound, consensus);
+                    Block decision = iAmLeader() ? consensus.runAsLeader() : consensus.runAsFollower();
+                    Thread.sleep(blockTime - (System.currentTimeMillis() - currentTime));
+                    if(decision != null)
+                        blockchain.addBlock(decision);
+                    notifyObservers(new ConsensusOutcomeDto(currentRound, decision));
+                } catch (Exception e) {
+                    logger.error("Error in server consensus broker", e);
+                }
+
+            }
+        }).start();
+    }
+
+    protected boolean validateBlock(Block block) {
+        return blockchain.validateNextBlock(block);
     }
 
     @Override
@@ -130,27 +161,9 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
         return activeConsensusInstances.containsKey(consensusId) && consensusMessageQueues.get(consensusId) == null;
     }
 
-    public CompletableFuture<Void> startConsensus() throws LinkException {
-        int consensusId = currentConsensusRound.get() + 1;
-        return initConsensus(consensusId);
-    }
 
-    private CompletableFuture<Void> initConsensus(int consensusId) throws LinkException {
-        int myId = myProcess.getId();
-        ConsensusPayload cPayload = new ConsensusPayload(myId, consensusId, READ, null, keyService);
-        CompletableFuture<Void> future = new CompletableFuture<>();
-        senderFutures.put(cPayload.getConsensusId(), future);
-        String payloadString = new Gson().toJson(cPayload);
-        logger.info("P{}: Starting server.consensus", myProcess.getId());
+    private void buildBlocks() {
 
-        // Send the message to myself
-        link.send(myId, new Message(myId, myId, Message.Type.CONSENSUS, payloadString));
-        // Send the message to everybody else
-        for (Process process : peers) {
-            int processId = process.getId();
-            link.send(process.getId(), new Message(myId, processId, Message.Type.CONSENSUS, payloadString));
-        }
-        return future;
     }
 
     public Consensus getConsensusInstance(int consensusId) {
@@ -171,10 +184,6 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     }
 
     public void clearClientQueue() { clientRequests.clear(); }
-
-    public Set<String> getExecutedTransactions() {
-        return executionEngine.getExecutedTransactions();
-    }
 
     public synchronized boolean iAmLeader() { return this.totalEpochs % (peers.length + 1) == myProcess.getId(); }
 

@@ -2,6 +2,8 @@ package server.blockchain.model;
 
 import common.model.Transaction;
 import lombok.Getter;
+import util.MerkleTree;
+import util.SecurityUtil;
 
 import java.util.List;
 
@@ -9,15 +11,23 @@ import java.util.List;
 public class Block {
     private final String parentHash;
     private final String blockHash;
-    private final List<Transaction> transactions;
-    private final String stateRoot;
     private final int timestamp;
+    private final List<Transaction> transactions;
 
-    public Block(String parentHash, List<Transaction> transactions, String stateRoot, int timestamp) {
+    public Block(String parentHash, List<Transaction> transactions, int timestamp) {
         this.parentHash = parentHash;
         this.transactions = transactions;
-        this.stateRoot = stateRoot;
         this.timestamp = timestamp;
         this.blockHash = "TODO: Implement block hash calculation.";
+    }
+
+    protected String generateBlockHash() {
+        List<String> transactionHashes = transactions.stream().map(Transaction::generateHash).toList();
+        byte[][] data = {
+                parentHash.getBytes(),
+                SecurityUtil.intToBytes(timestamp),
+                MerkleTree.getMerkleRoot(transactionHashes).getBytes(),
+        };
+        return SecurityUtil.generateHash(data);
     }
 }

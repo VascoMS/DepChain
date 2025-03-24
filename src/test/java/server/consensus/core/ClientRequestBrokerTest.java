@@ -1,16 +1,13 @@
 package server.consensus.core;
 
-import ch.qos.logback.core.net.server.Client;
 import com.google.gson.Gson;
 import common.model.*;
 import common.primitives.Link;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import server.app.ClientRequestBroker;
-import server.consensus.core.model.StringState;
-import server.consensus.core.model.WriteState;
+import server.evm.StringState;
 import server.consensus.core.primitives.ConsensusBroker;
 import util.KeyService;
 import util.Observer;
@@ -261,4 +258,5 @@ public class ClientRequestBrokerTest {
         clientLink.close();
         aliceClientLink.close();
     }
+
 }

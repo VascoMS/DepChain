@@ -3,6 +3,7 @@ package common.primitives;
 import common.model.Message;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +28,10 @@ public class StubbornLink implements AutoCloseable, Subject<Message>, Observer<M
         this.acksList = new CollapsingSet();
         this.observers = new ArrayList<>();
         flsLink.addObserver(this);
+    }
+
+    public void start() {
+        flsLink.start();
     }
 
     public void send(int nodeId, Message message) throws LinkException {
@@ -69,6 +74,14 @@ public class StubbornLink implements AutoCloseable, Subject<Message>, Observer<M
         ackMessage.setMessageId(messageId);
         flsLink.send(senderId, ackMessage);
         logger.info("P{}: ACK {} sent to node P{}", myProcess.getId(), messageId, senderId);
+    }
+
+    protected Map<Integer, Process> getPeers() {
+        return flsLink.getPeers();
+    }
+
+    public void waitForTermination() {
+        flsLink.waitForTermination();
     }
 
     @Override

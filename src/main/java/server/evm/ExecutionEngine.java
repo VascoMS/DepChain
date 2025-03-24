@@ -1,8 +1,6 @@
-package server.consensus.core.primitives;
+package server.evm;
 
 import lombok.Setter;
-import server.consensus.core.model.State;
-import server.consensus.core.model.StringState;
 import common.model.Transaction;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;

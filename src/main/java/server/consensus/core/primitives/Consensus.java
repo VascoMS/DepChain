@@ -4,7 +4,8 @@ import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import common.model.Transaction;
 import common.model.Message;
-import common.primitives.Link;
+import common.primitives.AuthenticatedPerfectLink;
+import server.blockchain.model.Block;
 import server.consensus.test.ConsensusByzantineMode;
 import util.KeyService;
 import server.consensus.core.model.*;
@@ -17,16 +18,19 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Type;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+
+import static server.consensus.core.model.ConsensusPayload.ConsensusType.READ;
 
 public class Consensus {
     private static final Logger logger = LoggerFactory.getLogger(Consensus.class);
     @Getter
-    private final int id;
+    private final int roundId;
     private final ConsensusBroker broker;
     private final Process myProcess;
     private final Process[] peers;
-    private final Link link;
+    private final AuthenticatedPerfectLink link;
     private final KeyService keyService;
     private final WriteState myState;
     private int epoch;
@@ -47,12 +51,12 @@ public class Consensus {
             Process myProcess,
             Process[] peers,
             KeyService keyService,
-            Link link,
+            AuthenticatedPerfectLink link,
             int byzantineProcesses,
             int epochOffset,
             ConsensusByzantineMode byzantineMode
     ) {
-        this.id = id;
+        this.roundId = id;
         this.broker = broker;
         this.myProcess = myProcess;
         this.peers = peers;
@@ -104,6 +108,8 @@ public class Consensus {
     private void handleState(int myId, ConsensusPayload receivedPayload) throws LinkException {
         logger.info("P{}: Received STATE Message from P{}, storing.",
                 myId, receivedPayload.getSenderId());
+        if(!iAmLeader())
+            return; // Ignore if not leader
         peersStates.putIfAbsent(receivedPayload.getSenderId(), receivedPayload);
         if (peersStates.size() > 2 * byzantineProcesses) {
             ConsensusPayload collectedPayload = new ConsensusPayload(
@@ -131,7 +137,7 @@ public class Consensus {
             WriteState leaderState = new Gson().fromJson(
                     collectedStates.get(currentLeaderId).getContent(), WriteState.class
             );
-            Transaction leaderValue = leaderState.getLatestWrite().value();
+            Block leaderValue = leaderState.getLatestWrite().value();
 
             List<WriteState> writeStates = extractWriteStates(collectedStates);
             List<List<WritePair>> writeSets = writeStates.stream()
@@ -144,12 +150,11 @@ public class Consensus {
             if (writeValue != null) {
                 sendWriteMessage(myId, receivedPayload.getConsensusId(), writeValue, epoch);
             }
-            return true;
         }
         else {
             logger.info("P{}: Received COLLECTED message from non-leader P{}, ignoring.", myId, receivedPayload.getSenderId());
-            return true; // Despite not being valid, no need to abort as leader can eventually send a real COLLECTED.
         }
+        return true;
     }
 
     private boolean handleWrite(int myId, ConsensusPayload receivedPayload) throws LinkException {
@@ -165,7 +170,7 @@ public class Consensus {
                         .filter(m -> m.equals(collectedWrite))
                         .count() > 2L * byzantineProcesses) {
             // Validate observed write
-            if(!validateTransaction(collectedWrite.value())) {
+            if(!broker.validateBlock(collectedWrite.value())) {
                 logger.error("P{}: Invalid client transaction signature.", myId);
                 return false;
             }
@@ -193,17 +198,6 @@ public class Consensus {
         return true;
     }
 
-    private boolean validateTransaction(Transaction transaction) {
-        try {
-            return SecurityUtil.verifySignature(
-                    transaction, keyService.loadPublicKey("c" + transaction.from())
-            );
-        } catch (Exception e) {
-            logger.error("P{}: Error checking transaction signature: {}", myProcess.getId(), e.getMessage());
-            return false;
-        }
-    }
-
     private boolean handleAccept(int myId, ConsensusPayload receivedPayload) {
         logger.info("P{}: Received ACCEPT Message from P{}.",
                 myId, receivedPayload.getSenderId());
@@ -223,7 +217,7 @@ public class Consensus {
         return false;
     }
 
-    public Transaction collect(int consensusId) throws Exception {
+    public Block collect(int consensusId) throws Exception {
         int myId = myProcess.getId();
         boolean delivered = false;
         // Loop to keep receiving messages until delivery can be done.
@@ -267,6 +261,27 @@ public class Consensus {
         }
         return decision;
     }
+
+
+    public Block runAsLeader() throws Exception {
+        int myId = myProcess.getId();
+        ConsensusPayload cPayload = new ConsensusPayload(myId, roundId, READ, null, keyService);
+        String payloadString = new Gson().toJson(cPayload);
+        logger.info("P{}: Starting server.consensus", myProcess.getId());
+        // Send the message to myself
+        link.send(myId, new Message(myId, myId, Message.Type.CONSENSUS, payloadString));
+        // Send the message to everybody else
+        for (Process process : peers) {
+            int processId = process.getId();
+            link.send(process.getId(), new Message(myId, processId, Message.Type.CONSENSUS, payloadString));
+        }
+        return collect(roundId);
+    }
+
+    public Block runAsFollower() throws Exception {
+        return collect(roundId);
+    }
+
 
     protected void changeLeader() {
         epoch++;
@@ -378,6 +393,10 @@ public class Consensus {
 
     public int getRoundRobinLeader(int epoch, int numNodes){
         return (epoch + epochOffset) % numNodes;
+    }
+
+    public boolean iAmLeader() {
+        return myProcess.getId() == currentLeaderId;
     }
 
 

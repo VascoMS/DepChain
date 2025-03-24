@@ -9,6 +9,8 @@ import java.net.InetAddress;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+
+import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.consensus.exception.ErrorMessages;
@@ -22,8 +24,9 @@ public class FairLossLink implements AutoCloseable, Subject<Message> {
     private final DatagramSocket processSocket;
     private final Process myProcess;
     private final BlockingQueue<Message> messageQueue;
-    private final Thread socketThread;
-    private final Thread queueThread;
+    private Thread socketThread;
+    private Thread queueThread;
+    @Getter
     private final Map<Integer, Process> peers;
     private final LinkType type;
     protected boolean running;
@@ -42,12 +45,6 @@ public class FairLossLink implements AutoCloseable, Subject<Message> {
         } catch (Exception e) {
             throw new LinkException(ErrorMessages.LinkCreationError, e);
         }
-
-        this.running = true;
-        socketThread = new Thread(this::socketReceiver);
-        queueThread = new Thread(this::queueReceiver);
-        socketThread.start();
-        queueThread.start();
     }
 
     public FairLossLink(Process myProcess, Process[] peers, LinkType type) throws Exception {
@@ -55,6 +52,14 @@ public class FairLossLink implements AutoCloseable, Subject<Message> {
         for(Process peer: peers) {
             addPeer(peer);
         }
+    }
+
+    public void start() {
+        this.running = true;
+        this.socketThread = new Thread(this::socketReceiver);
+        this.queueThread = new Thread(this::queueReceiver);
+        this.socketThread.start();
+        this.queueThread.start();
     }
 
     public void addPeer(Process peer) {
