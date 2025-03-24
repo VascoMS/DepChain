@@ -55,7 +55,7 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
 
         // Start exchanging keys after boot-up (Clients don't create keys)
         if (type != LinkType.CLIENT_TO_SERVER) {
-            new Thread(() -> { initiateKeyExchange(peers); }).start();
+            new Thread(() -> initiateKeyExchange(peers)).start();
         }
     }
 
@@ -86,16 +86,17 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
 
                 // Encrypt the key with peer's public key
                 String cipheredKey = SecurityUtil.cipherSecretKey(key, keyService.loadPublicKey(publicKeyPrefix + peerId));
+                logger.info("P{}: Sending key to peer P{}: {}", myProcess.getId(), peerId, cipheredKey);
 
                 // Create and sign a key exchange message
                 Message keyMessage = new Message(myProcess.getId(), peerId, Message.Type.KEY_EXCHANGE, cipheredKey);
-                SignedMessage signedKeyMessage = new SignedMessage(keyMessage, keyService.loadPrivateKey(privateKeyPrefix + myProcess.getId()));
 
                 // Send the signed key exchange message using the underlying stubborn link
-                sendSignedMessage(peerId, signedKeyMessage);
+                send(peerId, keyMessage);
 
                 // Complete future to indicate key is ready
                 keyExchangeFutures.get(peerId).complete(true);
+                logger.info("P{}: Key exchanged with peer P{}", myProcess.getId(), peerId);
             } catch (Exception e) {
                 logger.error("Error exchanging key with peer {}: {}", peerId, e.getMessage(), e);
                 throw new RuntimeException(e);
@@ -114,7 +115,7 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
         );
         wrappedMessage.setMessageId(signedMessage.getMessageId());
 
-        // Use the stubborn link's send method
+        // Use the link's send method
         stbLink.send(nodeId, wrappedMessage);
     }
 
@@ -218,7 +219,7 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
 
 
     @Override
-    public void close() throws Exception {
+    public void close()  {
         stbLink.close();
     }
 
@@ -230,7 +231,7 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
                     message.getPayload(), SignedMessage.class);
 
             // Verify message authenticity
-            boolean messageIsAuthentic = false;
+            boolean messageIsAuthentic;
             if (signedMessage.getType() == Message.Type.KEY_EXCHANGE) {
                 messageIsAuthentic = SecurityUtil.verifySignature(
                         signedMessage,

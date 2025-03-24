@@ -99,7 +99,7 @@ class ClientOperations implements Observer<Message> {
         String id = UUID.randomUUID().toString();
         PrivateKey privateKey = keyService.loadPrivateKey("c" + myId);
         String signature = SecurityUtil.signTransaction(id, myId, value, privateKey);
-        return new Transaction(id, myId, value, signature);
+        return new Transaction(id, myId, myId, value, signature); // TODO: change to.
     }
 
     @Override

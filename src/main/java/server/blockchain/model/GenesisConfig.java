@@ -10,6 +10,7 @@ public class GenesisConfig {
 
     public GenesisConfig(String genesisFilePath) {
         this.parentHash = null;
-
+        this.stateRoot = "TODO";
+        this.timestamp = 0; // TODO
     }
 }

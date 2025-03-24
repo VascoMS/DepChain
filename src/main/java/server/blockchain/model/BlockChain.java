@@ -11,6 +11,7 @@ public class BlockChain {
 
     public BlockChain(List<Block> blockchain) {
         this.blockchain = blockchain;
+        this.executionEngine = null;
         //this.executionEngine = new ExecutionEngine();
     }
 }
