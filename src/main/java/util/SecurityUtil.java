@@ -260,4 +260,7 @@ public class SecurityUtil {
     public static byte[] intToBytes(int value) {
         return ByteBuffer.allocate(4).putInt(value).array();
     }
+    public static byte[] longToBytes(long value) {
+        return ByteBuffer.allocate(8).putLong(value).array();
+    }
 }

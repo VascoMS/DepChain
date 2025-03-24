@@ -11,10 +11,10 @@ import java.util.List;
 public class Block {
     private final String parentHash;
     private final String blockHash;
-    private final int timestamp;
+    private final long timestamp;
     private final List<Transaction> transactions;
 
-    public Block(String parentHash, List<Transaction> transactions, int timestamp) {
+    public Block(String parentHash, List<Transaction> transactions, long timestamp) {
         this.parentHash = parentHash;
         this.transactions = transactions;
         this.timestamp = timestamp;
@@ -25,7 +25,7 @@ public class Block {
         List<String> transactionHashes = transactions.stream().map(Transaction::generateHash).toList();
         byte[][] data = {
                 parentHash.getBytes(),
-                SecurityUtil.intToBytes(timestamp),
+                SecurityUtil.longToBytes(timestamp),
                 MerkleTree.getMerkleRoot(transactionHashes).getBytes(),
         };
         return SecurityUtil.generateHash(data);

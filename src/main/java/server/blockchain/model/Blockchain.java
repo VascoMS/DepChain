@@ -40,7 +40,7 @@ public class Blockchain {
         }
 
         // Validate timestamp
-        if (block.getTimestamp() <= lastBlock.getTimestamp()) {
+        if (block.getTimestamp() > lastBlock.getTimestamp()) {
             logger.warn("Invalid timestamp: block timestamp {} not greater than parent timestamp {}",
                     block.getTimestamp(), lastBlock.getTimestamp());
             return false;

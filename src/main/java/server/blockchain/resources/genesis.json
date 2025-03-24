@@ -3,10 +3,18 @@
   "previous_block_hash": null,
   "transactions": [],
   "state": {
-    "<EOA account address>": {
+    "<Alice account address>": {
       "balance": "100000"
     },
-    "<Contract account address>": {
+    "<Bob account address>": {
+      "balance": "0"
+    },
+    "<Blacklist account address>": {
+      "balance": 0,
+      "code": "0x60016002...",
+      "storage": {}
+    },
+    "<ISTCoin account address>": {
       "balance": 0,
       "code": "0x60016002...",
       "storage": {}

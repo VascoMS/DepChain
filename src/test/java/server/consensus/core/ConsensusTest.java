@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import common.model.Transaction;
 import common.model.Message;
 import common.primitives.AuthenticatedPerfectLink;
+import server.blockchain.model.Blockchain;
 import server.consensus.core.model.*;
 import server.consensus.core.primitives.ConsensusBroker;
 import common.primitives.LinkType;
@@ -26,11 +27,17 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class ConsensusTest {
 
+    private static Process = new
+
     private static AuthenticatedPerfectLink aliceLink;
     private static AuthenticatedPerfectLink bobLink;
     private static AuthenticatedPerfectLink carlLink;
     private static AuthenticatedPerfectLink jeffLink;
-    private static final String privateKeyPrefix = "p";
+
+    private static Blockchain aliceBlockchain;
+    private static Blockchain bobBlockchain;
+    private static Blockchain carlBlockchain;
+    private static Blockchain jeffBlockchain;
 
     private static ConsensusBroker aliceBroker;
     private static ConsensusBroker bobBroker;
@@ -40,14 +47,15 @@ public class ConsensusTest {
     private static KeyService serverKeyService;
     private static KeyService clientKeyService;
 
+    private static final int blockTime = 6000;
+
+    private static final String privateKeyPrefix = "p";
+
 
     @BeforeAll
     public static void startLinks() throws Exception {
         // Assemble
-        Process aliceProcess = new Process(0, "localhost", 1024);
-        Process bobProcess = new Process(1, "localhost", 1025);
-        Process carlProcess = new Process(2, "localhost", 1026);
-        Process jeffProcess = new Process(3, "localhost", 1027);
+
 
         serverKeyService = new KeyService(SecurityUtil.SERVER_KEYSTORE_PATH, "mypass");
         clientKeyService = new KeyService(SecurityUtil.CLIENT_KEYSTORE_PATH, "mypass");
@@ -76,13 +84,22 @@ public class ConsensusTest {
                 100, privateKeyPrefix, privateKeyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
+        aliceBlockchain = new MockBlockchain(serverKeyService);
+        bobBlockchain = new MockBlockchain(serverKeyService);
+        carlBlockchain = new MockBlockchain(serverKeyService);
+        jeffBlockchain = new MockBlockchain(serverKeyService);
+    }
+
+    @BeforeEach
+    public void readyBrokers() {
         aliceBroker = new ConsensusBroker(
                 aliceProcess,
                 new Process[]{bobProcess, carlProcess, jeffProcess},
                 aliceLink,
                 1,
                 serverKeyService,
-                new StringState()
+                aliceBlockchain,
+                blockTime
         );
 
         bobBroker = new ConsensusBroker(
@@ -91,7 +108,8 @@ public class ConsensusTest {
                 bobLink,
                 1,
                 serverKeyService,
-                new StringState()
+                bobBlockchain,
+                blockTime
         );
 
         carlBroker = new ConsensusBroker(
@@ -100,7 +118,8 @@ public class ConsensusTest {
                 carlLink,
                 1,
                 serverKeyService,
-                new StringState()
+                carlBlockchain,
+                blockTime
         );
 
         jeffBroker = new ConsensusBroker(
@@ -109,7 +128,8 @@ public class ConsensusTest {
                 jeffLink,
                 1,
                 serverKeyService,
-                new StringState()
+                jeffBlockchain,
+                blockTime
         );
     }
 

@@ -2,7 +2,6 @@ package server.consensus.core.primitives;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
-import common.model.Transaction;
 import common.model.Message;
 import common.primitives.AuthenticatedPerfectLink;
 import server.blockchain.model.Block;
@@ -18,7 +17,6 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Type;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static server.consensus.core.model.ConsensusPayload.ConsensusType.READ;
@@ -171,13 +169,13 @@ public class Consensus {
                         .count() > 2L * byzantineProcesses) {
             // Validate observed write
             if(!broker.validateBlock(collectedWrite.value())) {
-                logger.error("P{}: Invalid client transaction signature.", myId);
+                logger.error("P{}: Invalid block.", myId);
                 return false;
             }
             logger.info("P{}: Sending ACCEPT message, value {}", myId, collectedWrite.value());
             // Return request to queue if it had been fetched and was not chosen in the server.consensus round
             if(fetchedFromClientQueue && myState.getLatestWrite().value() != null && !myState.getLatestWrite().equals(collectedWrite)) {
-                broker.destroyBlock(proposal);
+                broker.returnTransactions(proposal, collectedWrite.value());
                 fetchedFromClientQueue = false;
             }
             myState.setLatestWrite(collectedWrite);
@@ -280,13 +278,6 @@ public class Consensus {
 
     public Block runAsFollower() throws Exception {
         return collect(roundId);
-    }
-
-
-    protected void changeLeader() {
-        epoch++;
-        broker.incrementEpoch();
-        this.currentLeaderId = getRoundRobinLeader(epoch, peers.length + 1);
     }
 
     private HashMap<Integer, ConsensusPayload> parseCollectedStates(ConsensusPayload receivedPayload) {
