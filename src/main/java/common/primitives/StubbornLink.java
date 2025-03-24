@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import server.consensus.exception.ErrorMessages;
 import server.consensus.exception.LinkException;
 import util.CollapsingSet;
 import util.Observer;
@@ -35,7 +36,9 @@ public class StubbornLink implements AutoCloseable, Subject<Message>, Observer<M
     }
 
     public void send(int nodeId, Message message) throws LinkException {
-
+        if (!flsLink.getPeers().containsKey(nodeId) && nodeId != myProcess.getId()) {
+            throw new LinkException(ErrorMessages.NoSuchNodeError);
+        }
         if(nodeId == myProcess.getId()) {
             flsLink.send(nodeId, message);
         } else {
@@ -57,18 +60,12 @@ public class StubbornLink implements AutoCloseable, Subject<Message>, Observer<M
         logger.info("P{}: Message {} sent to P{}", myProcess.getId(), message.getMessageId(), nodeId);
     }
 
-    /**
-     * Processes ACK messages
-     */
     protected void handleAckMessage(Message message) {
         acksList.add(message.getMessageId());
         logger.info("P{}: ACK {} received from node P{}",
                 myProcess.getId(), message.getMessageId(), message.getSenderId());
     }
 
-    /**
-     * Sends an ACK message for a received message
-     */
     protected void sendAck(int senderId, int messageId) throws LinkException {
         Message ackMessage = new Message(myProcess.getId(), senderId, Message.Type.ACK, "");
         ackMessage.setMessageId(messageId);
@@ -96,7 +93,6 @@ public class StubbornLink implements AutoCloseable, Subject<Message>, Observer<M
 
     @Override
     public void notifyObservers(Message message) {
-        // Be careful not to have a blocking update method in the observer
         for (Observer observer : observers) {
             logger.info("P{}: Notifying observer of message {} {}",
                     myProcess.getId(), message.getType(), message.getMessageId());

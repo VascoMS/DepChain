@@ -2,7 +2,8 @@ package client.app;
 
 import com.google.gson.Gson;
 import common.model.*;
-import common.primitives.Link;
+import common.primitives.AuthenticatedPerfectLink;
+import common.primitives.LinkType;
 import server.consensus.exception.LinkException;
 import util.KeyService;
 import util.Observer;
@@ -21,7 +22,7 @@ class ClientOperations implements Observer<Message> {
 
     private static final String KEYSTORE_PATH = "src/main/java/client/keys/keystore.p12";
     private static final String KEYSTORE_PASS = "mypass";
-    private final Link link;
+    private final AuthenticatedPerfectLink link;
     private final int myId;
     private final KeyService keyService;
     private final Map<String, List<ServerResponse>> receivedResponses;
@@ -31,10 +32,10 @@ class ClientOperations implements Observer<Message> {
 
     public ClientOperations(Process myProcess, Process[] serverProcesses)  throws Exception {
         this.myId = myProcess.getId();
-        this.link = new Link(
+        this.link = new AuthenticatedPerfectLink(
                 myProcess,
                 serverProcesses,
-                Link.Type.CLIENT_TO_SERVER,
+                LinkType.CLIENT_TO_SERVER,
                 100,
                 "c",
                 "p",

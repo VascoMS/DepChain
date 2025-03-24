@@ -1,0 +1,15 @@
+{
+  "block_hash": "<HASH_OF_LIST_OF_TRANSACTIONS>",
+  "previous_block_hash": null,
+  "transactions": [],
+  "state": {
+    "<EOA account address>": {
+      "balance": "100000"
+    },
+    "<Contract account address>": {
+      "balance": 0,
+      "code": "0x60016002...",
+      "storage": {}
+    }
+  }
+}

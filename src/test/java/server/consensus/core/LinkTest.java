@@ -2,7 +2,6 @@ package server.consensus.core;
 
 import common.model.Message;
 import common.primitives.AuthenticatedPerfectLink;
-import common.primitives.Link;
 import common.primitives.LinkType;
 import server.consensus.exception.ErrorMessages;
 import server.consensus.exception.LinkException;
@@ -36,6 +35,9 @@ public class LinkTest {
 
         aliceLink = new AuthenticatedPerfectLink(aliceProcess, new Process[]{bobProcess}, LinkType.SERVER_TO_SERVER,100, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
         bobLink = new AuthenticatedPerfectLink(bobProcess, new Process[]{aliceProcess}, LinkType.SERVER_TO_SERVER,  100, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
+
+        aliceLink.start();
+        bobLink.start();
     }
 
     @Test
@@ -118,7 +120,7 @@ public class LinkTest {
     @Test
     public void noSendOrReceiveAfterClose() throws Exception {
         Process process = new Process(999, "localhost", 1030);
-        Link link = new Link(process, new Process[] {aliceProcess, bobProcess}, Link.Type.SERVER_TO_SERVER, 200, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
+        AuthenticatedPerfectLink link = new AuthenticatedPerfectLink(process, new Process[] {aliceProcess, bobProcess}, LinkType.SERVER_TO_SERVER, 200, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
         link.close();
         assertThrows(
                 LinkException.class,

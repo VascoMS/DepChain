@@ -3,9 +3,10 @@ package server.consensus.core;
 import com.google.gson.Gson;
 import common.model.Transaction;
 import common.model.Message;
+import common.primitives.AuthenticatedPerfectLink;
 import server.consensus.core.model.*;
 import server.consensus.core.primitives.ConsensusBroker;
-import common.primitives.Link;
+import common.primitives.LinkType;
 import server.consensus.test.ConsensusByzantineMode;
 import server.evm.StringState;
 import util.KeyService;
@@ -25,10 +26,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class ConsensusTest {
 
-    private static Link aliceLink;
-    private static Link bobLink;
-    private static Link carlLink;
-    private static Link jeffLink;
+    private static AuthenticatedPerfectLink aliceLink;
+    private static AuthenticatedPerfectLink bobLink;
+    private static AuthenticatedPerfectLink carlLink;
+    private static AuthenticatedPerfectLink jeffLink;
     private static final String privateKeyPrefix = "p";
 
     private static ConsensusBroker aliceBroker;
@@ -51,27 +52,27 @@ public class ConsensusTest {
         serverKeyService = new KeyService(SecurityUtil.SERVER_KEYSTORE_PATH, "mypass");
         clientKeyService = new KeyService(SecurityUtil.CLIENT_KEYSTORE_PATH, "mypass");
 
-        aliceLink = new Link(
+        aliceLink = new AuthenticatedPerfectLink(
                 aliceProcess,
-                new Process[]{bobProcess, carlProcess, jeffProcess}, Link.Type.SERVER_TO_SERVER,
+                new Process[]{bobProcess, carlProcess, jeffProcess}, LinkType.SERVER_TO_SERVER,
                 100, privateKeyPrefix, privateKeyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
-        bobLink = new Link(
+        bobLink = new AuthenticatedPerfectLink(
                 bobProcess,
-                new Process[]{aliceProcess, carlProcess, jeffProcess}, Link.Type.SERVER_TO_SERVER,
+                new Process[]{aliceProcess, carlProcess, jeffProcess}, LinkType.SERVER_TO_SERVER,
                 100, privateKeyPrefix, privateKeyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
-        carlLink = new Link(
+        carlLink = new AuthenticatedPerfectLink(
                 carlProcess,
-                new Process[]{bobProcess, aliceProcess, jeffProcess}, Link.Type.SERVER_TO_SERVER,
+                new Process[]{bobProcess, aliceProcess, jeffProcess}, LinkType.SERVER_TO_SERVER,
                 100, privateKeyPrefix, privateKeyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
-        jeffLink = new Link(
+        jeffLink = new AuthenticatedPerfectLink(
                 jeffProcess,
-                new Process[]{bobProcess, carlProcess, aliceProcess}, Link.Type.SERVER_TO_SERVER,
+                new Process[]{bobProcess, carlProcess, aliceProcess}, LinkType.SERVER_TO_SERVER,
                 100, privateKeyPrefix, privateKeyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
@@ -482,4 +483,5 @@ public class ConsensusTest {
         carlLink.close();
         jeffLink.close();
     }
+
 }

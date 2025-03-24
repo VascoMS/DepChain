@@ -12,7 +12,6 @@ import server.consensus.core.primitives.ConsensusBroker;
 import server.consensus.exception.LinkException;
 import util.Observer;
 import common.model.Message;
-import common.primitives.Link;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;

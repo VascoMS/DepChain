@@ -2,7 +2,8 @@ package server.consensus.core;
 
 import com.google.gson.Gson;
 import common.model.*;
-import common.primitives.Link;
+import common.primitives.AuthenticatedPerfectLink;
+import common.primitives.LinkType;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -23,14 +24,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ClientRequestBrokerTest {
 
-    private static Link aliceProcessLink;
-    private static Link bobProcessLink;
-    private static Link carlProcessLink;
-    private static Link jeffProcessLink;
+    private static AuthenticatedPerfectLink aliceProcessLink;
+    private static AuthenticatedPerfectLink bobProcessLink;
+    private static AuthenticatedPerfectLink carlProcessLink;
+    private static AuthenticatedPerfectLink jeffProcessLink;
     private static final String privateKeyPrefix = "p";
 
-    private static Link clientLink;
-    private static Link aliceClientLink;
+    private static AuthenticatedPerfectLink clientLink;
+    private static AuthenticatedPerfectLink aliceClientLink;
 
     private static ConsensusBroker aliceConsensusBroker;
     private static ConsensusBroker bobConsensusBroker;
@@ -64,27 +65,27 @@ public class ClientRequestBrokerTest {
         carlState = new StringState();
         jeffState = new StringState();
 
-        aliceProcessLink = new Link(
+        aliceProcessLink = new AuthenticatedPerfectLink(
                 aliceProcess,
-                new Process[]{bobProcess, carlProcess, jeffProcess}, Link.Type.SERVER_TO_SERVER,
+                new Process[]{bobProcess, carlProcess, jeffProcess}, LinkType.SERVER_TO_SERVER,
                 100, privateKeyPrefix, privateKeyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
-        bobProcessLink = new Link(
+        bobProcessLink = new AuthenticatedPerfectLink(
                 bobProcess,
-                new Process[]{aliceProcess, carlProcess, jeffProcess}, Link.Type.SERVER_TO_SERVER,
+                new Process[]{aliceProcess, carlProcess, jeffProcess}, LinkType.SERVER_TO_SERVER,
                 100, privateKeyPrefix, privateKeyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
-        carlProcessLink = new Link(
+        carlProcessLink = new AuthenticatedPerfectLink(
                 carlProcess,
-                new Process[]{bobProcess, aliceProcess, jeffProcess}, Link.Type.SERVER_TO_SERVER,
+                new Process[]{bobProcess, aliceProcess, jeffProcess}, LinkType.SERVER_TO_SERVER,
                 100, privateKeyPrefix, privateKeyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
-        jeffProcessLink = new Link(
+        jeffProcessLink = new AuthenticatedPerfectLink(
                 jeffProcess,
-                new Process[]{bobProcess, carlProcess, aliceProcess}, Link.Type.SERVER_TO_SERVER,
+                new Process[]{bobProcess, carlProcess, aliceProcess}, LinkType.SERVER_TO_SERVER,
                 100, privateKeyPrefix, privateKeyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
@@ -127,15 +128,15 @@ public class ClientRequestBrokerTest {
         Process clientProcess = new Process(1, "localhost", 8080);
         Process aliceClientProcess = new Process(0, "localhost", 1124);
 
-        clientLink = new Link(
+        clientLink = new AuthenticatedPerfectLink(
                 clientProcess,
-                new Process[]{aliceClientProcess}, Link.Type.CLIENT_TO_SERVER,
+                new Process[]{aliceClientProcess}, LinkType.CLIENT_TO_SERVER,
                 100, "c", "p", SecurityUtil.CLIENT_KEYSTORE_PATH
         );
 
-        aliceClientLink = new Link(
+        aliceClientLink = new AuthenticatedPerfectLink(
                 aliceClientProcess,
-                new Process[]{clientProcess}, Link.Type.SERVER_TO_CLIENT,
+                new Process[]{clientProcess}, LinkType.SERVER_TO_CLIENT,
                 100, "p", "c", SecurityUtil.SERVER_KEYSTORE_PATH
         );
 

@@ -5,7 +5,6 @@ import common.primitives.LinkType;
 import server.evm.State;
 import server.evm.StringState;
 import server.consensus.core.primitives.ConsensusBroker;
-import common.primitives.Link;
 import util.KeyService;
 import util.Process;
 import util.SecurityUtil;
