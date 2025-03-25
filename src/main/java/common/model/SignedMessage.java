@@ -1,21 +1,21 @@
 package common.model;
 
-import javax.crypto.spec.SecretKeySpec;
-import util.SecurityUtil;
 import lombok.Getter;
+import util.SecurityUtil;
 
+import javax.crypto.spec.SecretKeySpec;
 import java.security.PrivateKey;
 
 @Getter
 public class SignedMessage extends Message {
     private final String integrity;
 
-    public SignedMessage(int senderId, int destinationId, Type type, String payload, PrivateKey privateKey) throws Exception{
+    public SignedMessage(String senderId, String destinationId, Type type, String payload, PrivateKey privateKey) throws Exception{
         super(senderId, destinationId, type, payload);
         this.integrity = SecurityUtil.signMessage(this, privateKey);
     }
 
-    public SignedMessage(int senderId, int destinationId, int messageId, Type type, PrivateKey privateKey) throws Exception{
+    public SignedMessage(String senderId, String destinationId, int messageId, Type type, PrivateKey privateKey) throws Exception{
         super(senderId, destinationId, type);
         this.setMessageId(messageId);
         this.integrity = SecurityUtil.signMessage(this, privateKey);
@@ -27,12 +27,12 @@ public class SignedMessage extends Message {
         this.integrity = SecurityUtil.signMessage(this, privateKey);
     }
 
-    public SignedMessage(int senderId, int destinationId, Type type, String payload, SecretKeySpec secretKey) throws Exception{
+    public SignedMessage(String senderId, String destinationId, Type type, String payload, SecretKeySpec secretKey) throws Exception{
         super(senderId, destinationId, type, payload);
         this.integrity = SecurityUtil.generateHMAC(this, secretKey);
     }
 
-    public SignedMessage(int senderId, int destinationId, int messageId, Type type, SecretKeySpec secretKey) throws Exception{
+    public SignedMessage(String senderId, String destinationId, int messageId, Type type, SecretKeySpec secretKey) throws Exception{
         super(senderId, destinationId, type);
         this.setMessageId(messageId);
         this.integrity = SecurityUtil.generateHMAC(this, secretKey);

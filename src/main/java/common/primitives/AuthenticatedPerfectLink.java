@@ -3,40 +3,37 @@ package common.primitives;
 import common.model.DeliveryKey;
 import common.model.Message;
 import common.model.SignedMessage;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicInteger;
-import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.consensus.exception.ErrorMessages;
 import server.consensus.exception.LinkException;
-import util.*;
 import util.Observer;
 import util.Process;
+import util.*;
+
+import javax.crypto.spec.SecretKeySpec;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>, Observer<Message> {
     private static final Logger logger = LoggerFactory.getLogger(AuthenticatedPerfectLink.class);
     private final Map<DeliveryKey, CollapsingSet> deliveredMessages = new HashMap<>();
     private final Process myProcess;
-    private final String privateKeyPrefix;
-    private final String publicKeyPrefix;
     private final StubbornLink stbLink;
     private final List<Observer<Message>> observers = new ArrayList<>();
     private final LinkType linkType;
     private final AtomicInteger messageCounter;
     private final KeyService keyService;
-    private final ConcurrentHashMap<Integer, SecretKeySpec> keys = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Integer, CompletableFuture<Boolean>> keyExchangeFutures = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, SecretKeySpec> keys = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, CompletableFuture<Boolean>> keyExchangeFutures = new ConcurrentHashMap<>();
 
     public AuthenticatedPerfectLink(Process myProcess, Process[] peers, LinkType type, int baseSleepTime,
-                                    String privateKeyPrefix, String publicKeyPrefix, String keyStorePath) throws Exception {
+                                    String keyStorePath) throws Exception {
         this.myProcess = myProcess;
         this.stbLink = new StubbornLink(myProcess, peers, type, baseSleepTime);
         this.linkType = type;
-        this.privateKeyPrefix = privateKeyPrefix;
-        this.publicKeyPrefix = publicKeyPrefix;
         this.messageCounter = new AtomicInteger(0);
         this.keyService = new KeyService(keyStorePath, "mypass");
 
@@ -71,17 +68,20 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
             }
         }
 
-        List<Integer> peersToShareKeys = linkType == LinkType.SERVER_TO_SERVER
-                ? Arrays.stream(peers).map(Process::getId).filter(id -> id > myProcess.getId())
+        // Since servers are identified with numbers, we'll convert strings to integers
+
+        List<String> peersToShareKeys = (linkType == LinkType.SERVER_TO_SERVER)
+                ? Arrays.stream(peers).filter(peer -> myProcess.getId().compareTo(peer.getId()) < 0)
+                .map(Object::toString)
                 .toList()
                 : Arrays.stream(peers).map(Process::getId).toList();
 
-        for (Integer peerId : peersToShareKeys) {
+        for (String peerId : peersToShareKeys) {
             try {
                 SecretKeySpec key = keyService.generateSecretKey();
                 keys.put(peerId, key);
 
-                String cipheredKey = SecurityUtil.cipherSecretKey(key, keyService.loadPublicKey(publicKeyPrefix + peerId));
+                String cipheredKey = SecurityUtil.cipherSecretKey(key, keyService.loadPublicKey(peerId));
                 logger.info("P{}: Sending key to peer P{}: {}", myProcess.getId(), peerId, cipheredKey);
 
                 Message keyMessage = new Message(myProcess.getId(), peerId, Message.Type.KEY_EXCHANGE, cipheredKey);
@@ -98,7 +98,7 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
     }
 
 
-    public void send(int nodeId, Message message) throws LinkException {
+    public void send(String nodeId, Message message) throws LinkException {
 
         if (!stbLink.getPeers().containsKey(nodeId) && nodeId != myProcess.getId()) {
             throw new LinkException(ErrorMessages.NoSuchNodeError);
@@ -119,7 +119,7 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
         try {
             SignedMessage signedMessage;
             if (message.getType() == Message.Type.KEY_EXCHANGE) {
-                signedMessage = new SignedMessage(message, keyService.loadPrivateKey(privateKeyPrefix + myProcess.getId()));
+                signedMessage = new SignedMessage(message, keyService.loadPrivateKey(myProcess.getId()));
             } else {
                 signedMessage = new SignedMessage(message, keys.get(nodeId));
             }
@@ -134,7 +134,7 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
         }
     }
 
-    private void sendSignedMessage(int nodeId, SignedMessage signedMessage) throws LinkException {
+    private void sendSignedMessage(String nodeId, SignedMessage signedMessage) throws LinkException {
         String signedContent = new com.google.gson.Gson().toJson(signedMessage);
         Message wrappedMessage = new Message(
                 signedMessage.getSenderId(),
@@ -147,7 +147,7 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
         stbLink.send(nodeId, wrappedMessage);
     }
 
-    private void waitForKeyExchange(int nodeId) {
+    private void waitForKeyExchange(String nodeId) {
         try {
             keyExchangeFutures.putIfAbsent(nodeId, new CompletableFuture<>());
             keyExchangeFutures.get(nodeId).get();
@@ -161,7 +161,7 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
             logger.info("P{}: Received key from P{}", myProcess.getId(), message.getSenderId());
 
             SecretKeySpec secretKey =
-                    SecurityUtil.decipherSecretKey(message.getPayload(), keyService.loadPrivateKey(privateKeyPrefix + myProcess.getId()));
+                    SecurityUtil.decipherSecretKey(message.getPayload(), keyService.loadPrivateKey(myProcess.getId()));
 
             keys.put(message.getSenderId(), secretKey);
             keyExchangeFutures.putIfAbsent(message.getSenderId(), new CompletableFuture<>());
@@ -230,7 +230,7 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
             if (signedMessage.getType() == Message.Type.KEY_EXCHANGE) {
                 messageIsAuthentic = SecurityUtil.verifySignature(
                         signedMessage,
-                        keyService.loadPublicKey(publicKeyPrefix + message.getSenderId())
+                        keyService.loadPublicKey(message.getSenderId())
                 );
             } else {
                 SecretKeySpec key = keys.get(signedMessage.getSenderId());

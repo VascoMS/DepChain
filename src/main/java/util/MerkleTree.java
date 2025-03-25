@@ -9,6 +9,9 @@ import java.util.List;
 public class MerkleTree {
 
     public static String getMerkleRoot(List<String> txnLists) {
+        if(txnLists.isEmpty()){
+            return null;
+        }
         List<String> merkleTree = merkleTree(txnLists);
         return merkleTree.get(0); // return root
     }

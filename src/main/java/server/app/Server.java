@@ -2,9 +2,6 @@ package server.app;
 
 import common.primitives.AuthenticatedPerfectLink;
 import common.primitives.LinkType;
-import server.evm.State;
-import server.evm.StringState;
-import server.consensus.core.primitives.ConsensusBroker;
 import util.KeyService;
 import util.Process;
 import util.SecurityUtil;
@@ -26,57 +23,31 @@ public class Server {
             System.err.printf("Usage: java %s <baseport replica-id client-base-port%n", Server.class.getName());
             return;
         }
-        State state = new StringState();
         int basePort = Integer.parseInt(args[0]);
-        int myId = Integer.parseInt(args[1]);
+        String myId = args[1];
         int clientBasePort = Integer.parseInt(args[2]);
+        int blockTime = 6000;
             Process[] processes = {
-                    new Process(0, "localhost", basePort),
-                    new Process(1, "localhost", basePort + 1),
-                    new Process(2, "localhost", basePort + 2),
-                    new Process(3, "localhost", basePort + 3)
+                    new Process("P0", "localhost", basePort),
+                    new Process("P1", "localhost", basePort + 1),
+                    new Process("P2", "localhost", basePort + 2),
+                    new Process("P3", "localhost", basePort + 3)
             };
         Process[] clients = {
-                new Process(1, "localhost", clientBasePort)
+                new Process("deaddeaddeaddeaddeaddeaddeaddeaddeaddead", "localhost", clientBasePort),
+                new Process("beefbeefbeefbeefbeefbeefbeefbeefbeefbeef", "localhost", clientBasePort + 1)
         };
-        Process myProcess = Arrays.stream(processes).filter(process -> process.getId() == myId).findFirst().get();
-        Process[] peers = Arrays.stream(processes).filter(process -> process.getId() != myId).toArray(Process[]::new);
+        Process myProcess = Arrays.stream(processes).filter(process -> process.getId().equals(myId)).findFirst().get();
         try {
-            AuthenticatedPerfectLink processLink = new AuthenticatedPerfectLink(
-                    myProcess,
-                    peers,
-                    LinkType.SERVER_TO_SERVER,
-                    100,
-                    "p",
-                    "p",
-                    SecurityUtil.SERVER_KEYSTORE_PATH
-            );
-            ConsensusBroker consensusBroker = new ConsensusBroker(
-                    myProcess,
-                    peers,
-                    processLink,
-                    calculateByzantineFailures(processes.length),
-                    new KeyService(SecurityUtil.SERVER_KEYSTORE_PATH, "mypass"),
-                    state
-            );
-
+            KeyService keyService = new KeyService(SecurityUtil.SERVER_KEYSTORE_PATH, "mypass");
+            Node node = new Node(basePort, myId, processes, blockTime, keyService);
             AuthenticatedPerfectLink clientLink = new AuthenticatedPerfectLink(
                     new Process(myProcess.getId(), myProcess.getHost(), myProcess.getPort() + 100),
                     clients,
-                    LinkType.SERVER_TO_CLIENT,
-                    100,
-                    "p",
-                    "c",
-                    SecurityUtil.SERVER_KEYSTORE_PATH
-            );
-            ClientRequestBroker clientRequestBroker = new ClientRequestBroker(
-                    myProcess.getId(),
-                    clientLink,
-                    consensusBroker,
-                    state
-            );
-            processLink.waitForTermination();
-            clientLink.waitForTermination();
+                    LinkType.SERVER_TO_CLIENT, 100, SecurityUtil.SERVER_KEYSTORE_PATH);
+
+            ClientRequestBroker broker = new ClientRequestBroker(myId, clientLink, node);
+            broker.start();
         } catch(Exception e) {
             throw new RuntimeException(e);
         }
@@ -85,5 +56,4 @@ public class Server {
     private static int calculateByzantineFailures(int numberOfProcesses) {
         return (numberOfProcesses - 1) / 3;
     }
-
 }

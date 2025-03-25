@@ -1,31 +1,24 @@
 package server.consensus.core.primitives;
 
 import com.google.gson.Gson;
-import common.model.Transaction;
 import common.model.Message;
+import common.model.Transaction;
 import common.primitives.AuthenticatedPerfectLink;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import server.blockchain.model.Block;
 import server.blockchain.model.Blockchain;
+import server.consensus.core.model.ConsensusOutcomeDto;
+import server.consensus.core.model.ConsensusPayload;
 import server.consensus.test.ConsensusByzantineMode;
-import server.evm.ExecutionEngine;
-import server.evm.State;
 import util.KeyService;
-import server.consensus.core.model.*;
-import server.consensus.exception.LinkException;
 import util.Observer;
 import util.Process;
 import util.Subject;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.Condition;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
-
-import static server.consensus.core.model.ConsensusPayload.ConsensusType.READ;
 
 public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutcomeDto> {
     private static final Logger logger = LoggerFactory.getLogger(ConsensusBroker.class);
@@ -43,6 +36,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     private final AtomicInteger currentConsensusRound = new AtomicInteger(0);
     private final List<Observer<ConsensusOutcomeDto>> consensusOutcomeObservers;
     private ConsensusByzantineMode byzantineMode;
+    private Thread brokerThread;
 
     public ConsensusBroker(Process myProcess, Process[] peers, AuthenticatedPerfectLink link, int byzantineProcesses, KeyService keyService, Blockchain blockchain, int blockTime) {
         this.consensusMessageQueues = new ConcurrentHashMap<>();
@@ -56,60 +50,69 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
         this.byzantineProcesses = byzantineProcesses;
         this.keyService = keyService;
         this.byzantineMode = ConsensusByzantineMode.NORMAL;
+        this.brokerThread = null;
         link.addObserver(this);
     }
 
+    public synchronized void start() {
+        if (brokerThread == null) {
+            brokerThread = new Thread(this::brokerThreadLoop);
+        }
+    }
 
-    public void start() {
+    private void brokerThreadLoop() {
         ExecutorService executorService = Executors.newSingleThreadExecutor();
-        new Thread(() -> {
-            while(true) {
-                try {
-                    long currentTime = System.currentTimeMillis();
-                    Consensus consensus;
-                    int currentRound = currentConsensusRound.intValue();
+        while (true) {
+            try {
+                long currentTime = System.currentTimeMillis();
+                Consensus consensus;
+                int currentRound = currentConsensusRound.intValue();
 
-                    if(activeConsensusInstances.containsKey(currentRound)) {
-                        logger.info("P{}: Consensus round {} already active", myProcess.getId(), currentRound);
-                        consensus = activeConsensusInstances.get(currentRound);
-                    } else {
-                        Block proposal = buildBlock();
-                        consensus = new Consensus(currentRound, proposal, this, myProcess, peers,
-                                keyService, link, byzantineProcesses, totalEpochs, byzantineMode);
-                    }
-
-                    activeConsensusInstances.put(currentRound, consensus);
-
-                    Future<Block> consensusFuture = executorService.submit(() ->
-                            iAmLeader() ? consensus.runAsLeader() : consensus.runAsFollower()
-                    );
-
-                    Block decision = null;
-                    try {
-                        decision = consensusFuture.get(blockTime, TimeUnit.MILLISECONDS);
-                    } catch (TimeoutException e) {
-                        logger.warn("P{}: Consensus round {} timed out", myProcess.getId(), currentRound);
-                        consensusFuture.cancel(true); // Attempt to interrupt the consensus thread
-                    }
-
-                    if(decision != null) {
-                        blockchain.addBlock(decision);
-                        cleanUpConsensus(currentRound);
-                        currentConsensusRound.incrementAndGet();
-                    }
-
-                    long elapsedTime = System.currentTimeMillis() - currentTime;
-
-                    if (elapsedTime < blockTime) {
-                        Thread.sleep(blockTime - elapsedTime);
-                    }
-
-                    notifyObservers(new ConsensusOutcomeDto(currentRound, decision));
-                } catch (Exception e) {
-                    logger.error("Error in server consensus broker: ", e);
+                if (activeConsensusInstances.containsKey(currentRound)) {
+                    logger.info("P{}: Consensus round {} already active", myProcess.getId(), currentRound);
+                    consensus = activeConsensusInstances.get(currentRound);
+                } else {
+                    Block proposal = buildBlock();
+                    consensus = new Consensus(currentRound, proposal, this, myProcess, peers,
+                            keyService, link, byzantineProcesses, totalEpochs, byzantineMode);
                 }
+
+                activeConsensusInstances.put(currentRound, consensus);
+
+                Future<Block> consensusFuture = executorService.submit(() ->
+                        iAmLeader() ? consensus.runAsLeader() : consensus.runAsFollower()
+                );
+
+                Block decision = null;
+                try {
+                    decision = consensusFuture.get(blockTime, TimeUnit.MILLISECONDS);
+                } catch (TimeoutException e) {
+                    logger.warn("P{}: Consensus round {} timed out", myProcess.getId(), currentRound);
+                    consensusFuture.cancel(true); // Attempt to interrupt the consensus thread
+                }
+
+                if (decision != null) {
+                    blockchain.addBlock(decision);
+                    cleanUpConsensus(currentRound);
+                    currentConsensusRound.incrementAndGet();
+                }
+
+                long elapsedTime = System.currentTimeMillis() - currentTime;
+
+                if (elapsedTime < blockTime) {
+                    Thread.sleep(blockTime - elapsedTime);
+                }
+
+                notifyObservers(new ConsensusOutcomeDto(currentRound, decision));
+            } catch (Exception e) {
+                logger.error("Error in server consensus broker: ", e);
             }
-        }).start();
+        }
+    }
+
+    public synchronized void stop() {
+        brokerThread.interrupt();
+        brokerThread = null;
     }
 
     private void cleanUpConsensus(int consensusRoundId) {
@@ -158,14 +161,17 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
         return consensusMessageQueues.get(consensusId).poll(timeout, TimeUnit.MILLISECONDS);
     }
 
-    public void addClientRequest(Transaction transaction) {
-        clientRequests.add(transaction);
+    public void addClientRequest(Transaction... transaction) {
+        clientRequests.addAll(Arrays.stream(transaction).toList());
         //clientRequests.notifyAll();
     }
 
     public void clearClientQueue() { clientRequests.clear(); }
 
-    public synchronized boolean iAmLeader() { return this.totalEpochs % (peers.length + 1) == myProcess.getId(); }
+    public synchronized boolean iAmLeader() {
+        int myIndex = Integer.parseInt(myProcess.getId().substring(1));
+        return this.totalEpochs % (peers.length + 1) == myIndex;
+    }
 
     public void waitForTransaction(String transactionId) throws InterruptedException {
         // executionEngine.waitForTransaction(transactionId);

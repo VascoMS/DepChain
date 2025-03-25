@@ -2,14 +2,6 @@ package common.primitives;
 
 import com.google.gson.Gson;
 import common.model.Message;
-import java.io.IOException;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
-import java.util.*;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
-
 import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +11,14 @@ import util.Observer;
 import util.Process;
 import util.Subject;
 
+import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.util.*;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+
 public class FairLossLink implements AutoCloseable, Subject<Message> {
     private static final Logger logger = LoggerFactory.getLogger(FairLossLink.class);
     private final DatagramSocket processSocket;
@@ -27,7 +27,7 @@ public class FairLossLink implements AutoCloseable, Subject<Message> {
     private Thread socketThread;
     private Thread queueThread;
     @Getter
-    private final Map<Integer, Process> peers;
+    private final Map<String, Process> peers;
     private final LinkType type;
     protected boolean running;
     protected final List<Observer<Message>> observers;
@@ -66,18 +66,18 @@ public class FairLossLink implements AutoCloseable, Subject<Message> {
         this.peers.put(peer.getId(), peer);
     }
 
-    public void send(int nodeId, Message message) throws LinkException {
+    public void send(String nodeId, Message message) throws LinkException {
         if (processSocket.isClosed()) {
             throw new LinkException(ErrorMessages.LinkClosedException);
         }
 
-        if (!peers.containsKey(nodeId) && nodeId != myProcess.getId()) {
+        if (!peers.containsKey(nodeId) && !nodeId.equals(myProcess.getId())) {
             throw new LinkException(ErrorMessages.NoSuchNodeError);
         }
 
         message.setDestinationId(nodeId);
 
-        if (nodeId == myProcess.getId() && type == LinkType.SERVER_TO_SERVER) {
+        if (nodeId.equals(myProcess.getId()) && type == LinkType.SERVER_TO_SERVER) {
             messageQueue.add(message);
             logger.info("P{}: Message added to local queue", myProcess.getId());
             return;

@@ -1,6 +1,7 @@
 package client.app;
 
 import util.Process;
+
 import java.util.Scanner;
 
 
@@ -14,7 +15,7 @@ public class ClientApp {
         }
 
         int port = Integer.parseInt(args[0]);
-        int myId = Integer.parseInt(args[1]);
+        String myId = args[1];
         int serverBasePort = Integer.parseInt(args[2]);
         String defaultHost = "localhost";
 
@@ -22,10 +23,10 @@ public class ClientApp {
         try {
             Process myProcess = new Process(myId, defaultHost, port);
             Process[] servers = {
-                    new Process(0, defaultHost, serverBasePort),
-                    new Process(1, defaultHost, serverBasePort + 1),
-                    new Process(2, defaultHost, serverBasePort + 2),
-                    new Process(3, defaultHost, serverBasePort + 3),
+                    new Process("p0", defaultHost, serverBasePort),
+                    new Process("p1", defaultHost, serverBasePort + 1),
+                    new Process("p2", defaultHost, serverBasePort + 2),
+                    new Process("p3", defaultHost, serverBasePort + 3),
             };
             ClientConsole clientConsole = new ClientConsole(scanner, new ClientOperations(myProcess, servers));
             clientConsole.start();

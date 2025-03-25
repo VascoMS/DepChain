@@ -1,22 +1,38 @@
 package server.blockchain.model;
 
+import com.google.gson.Gson;
 import common.model.Transaction;
 import org.slf4j.Logger;
+import server.evm.ExecutionEngine;
 import util.KeyService;
 
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 public class Blockchain {
     private static final Logger logger = org.slf4j.LoggerFactory.getLogger(Blockchain.class);
-    // TODO: Implement genesis block parsing.
     private final List<Block> blockchain;
     private final KeyService keyService;
-    //private final ExecutionEngine executionEngine;
+    private final ExecutionEngine executionEngine;
 
-    public Blockchain(List<Block> blockchain, KeyService keyService) {
-        this.blockchain = blockchain;
+    public Blockchain(KeyService keyService, ExecutionEngine executionEngine) {
+        this.blockchain = new ArrayList<>();
         this.keyService = keyService;
-        //this.executionEngine = new ExecutionEngine();
+        this.executionEngine = executionEngine;
+    }
+
+    public void bootstrap(String genesisFilePath) {
+        Gson gson = new Gson();
+        try (FileReader reader = new FileReader(genesisFilePath)) {
+            GenesisBlock genesisBlock = gson.fromJson(reader, GenesisBlock.class);
+            blockchain.add(genesisBlock);
+            executionEngine.initState(genesisBlock.getState());
+        } catch (IOException e) {
+            logger.error("Error reading genesis file: {}", e.getMessage());
+        }
+
     }
 
     public boolean validateNextBlock(Block block) {
@@ -86,6 +102,7 @@ public class Blockchain {
 
     public synchronized void addBlock(Block block) {
         blockchain.add(block);
+        executionEngine.executeTransactions(block.getTransactions());
     }
 
     public synchronized Block getLastBlock() {

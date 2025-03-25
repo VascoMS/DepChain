@@ -6,10 +6,10 @@ import lombok.Getter;
 import java.util.List;
 
 @Getter
-public class BlockWithState extends Block{
+public class GenesisBlock extends Block{
     private final String state;
 
-    public BlockWithState(String parentHash, List<Transaction> transactions, int timestamp, String state) {
+    public GenesisBlock(String parentHash, List<Transaction> transactions, int timestamp, String state) {
         super(parentHash, transactions, timestamp);
         this.state = state;
     }

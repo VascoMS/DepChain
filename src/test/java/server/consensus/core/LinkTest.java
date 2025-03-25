@@ -3,19 +3,20 @@ package server.consensus.core;
 import common.model.Message;
 import common.primitives.AuthenticatedPerfectLink;
 import common.primitives.LinkType;
-import server.consensus.exception.ErrorMessages;
-import server.consensus.exception.LinkException;
-import util.Observer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import server.consensus.exception.ErrorMessages;
+import server.consensus.exception.LinkException;
+import util.Observer;
 import util.Process;
 import util.SecurityUtil;
 
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class LinkTest {
 
@@ -30,11 +31,11 @@ public class LinkTest {
     public static void startLinks() throws Exception {
         // Assemble
 
-        aliceProcess = new Process(1, "localhost", 1024);
-        bobProcess = new Process(2, "localhost", 1025);
+        aliceProcess = new Process("P1", "localhost", 1024);
+        bobProcess = new Process("P2", "localhost", 1025);
 
-        aliceLink = new AuthenticatedPerfectLink(aliceProcess, new Process[]{bobProcess}, LinkType.SERVER_TO_SERVER,100, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
-        bobLink = new AuthenticatedPerfectLink(bobProcess, new Process[]{aliceProcess}, LinkType.SERVER_TO_SERVER,  100, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
+        aliceLink = new AuthenticatedPerfectLink(aliceProcess, new Process[]{bobProcess}, LinkType.SERVER_TO_SERVER,100, SecurityUtil.SERVER_KEYSTORE_PATH);
+        bobLink = new AuthenticatedPerfectLink(bobProcess, new Process[]{aliceProcess}, LinkType.SERVER_TO_SERVER,  100, SecurityUtil.SERVER_KEYSTORE_PATH);
 
         aliceLink.start();
         bobLink.start();
@@ -46,7 +47,7 @@ public class LinkTest {
         CountDownLatch latch = new CountDownLatch(1);
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
 
-        Message aliceMessage = new Message(1, 2, Message.Type.UNICAST, "hello");
+        Message aliceMessage = new Message("P1", "P2", Message.Type.UNICAST, "hello");
 
         // Assert
         Observer<Message> bobObserver = message -> {
@@ -62,7 +63,7 @@ public class LinkTest {
         };
 
         bobLink.addObserver(bobObserver);
-        aliceLink.send(2, aliceMessage);
+        aliceLink.send("P2", aliceMessage);
         latch.await();
         bobLink.removeObserver(bobObserver);
 
@@ -78,7 +79,7 @@ public class LinkTest {
         CountDownLatch latch = new CountDownLatch(1);
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
 
-        Message aliceMessage = new Message(1, 1, Message.Type.UNICAST, "hello");
+        Message aliceMessage = new Message("P1", "P1", Message.Type.UNICAST, "hello");
 
         // Assert
         Observer<Message> aliceObserver = message -> {
@@ -93,7 +94,7 @@ public class LinkTest {
         };
 
         aliceLink.addObserver(aliceObserver);
-        aliceLink.send(1, aliceMessage);
+        aliceLink.send("P1", aliceMessage);
         latch.await();
         aliceLink.removeObserver(aliceObserver);
 
@@ -107,9 +108,9 @@ public class LinkTest {
     public void sendingToUnknownPeer() {
         assertThrows(
                 LinkException.class,
-                () -> aliceLink.send(100, new Message(
-                        1,
-                        100,
+                () -> aliceLink.send("P100", new Message(
+                        "P1",
+                        "P100",
                         Message.Type.UNICAST,
                         "hello"
                 )),
@@ -119,14 +120,14 @@ public class LinkTest {
 
     @Test
     public void noSendOrReceiveAfterClose() throws Exception {
-        Process process = new Process(999, "localhost", 1030);
-        AuthenticatedPerfectLink link = new AuthenticatedPerfectLink(process, new Process[] {aliceProcess, bobProcess}, LinkType.SERVER_TO_SERVER, 200, keyPrefix, keyPrefix, SecurityUtil.SERVER_KEYSTORE_PATH);
+        Process process = new Process("P999", "localhost", 1030);
+        AuthenticatedPerfectLink link = new AuthenticatedPerfectLink(process, new Process[] {aliceProcess, bobProcess}, LinkType.SERVER_TO_SERVER, 200, SecurityUtil.SERVER_KEYSTORE_PATH);
         link.close();
         assertThrows(
                 LinkException.class,
-                () -> link.send(1, new Message(
-                        999,
-                        1,
+                () -> link.send("P1", new Message(
+                        "P999",
+                        "P1",
                         Message.Type.UNICAST,
                         "hello"
                 )),

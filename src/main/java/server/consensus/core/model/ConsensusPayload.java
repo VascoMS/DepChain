@@ -1,16 +1,16 @@
 package server.consensus.core.model;
 
-import util.KeyService;
-import util.SecurityUtil;
 import lombok.Getter;
 import lombok.Setter;
+import util.KeyService;
+import util.SecurityUtil;
 
 
 @Getter
 public class ConsensusPayload {
 
     @Setter
-    private int senderId;
+    private String senderId;
     private final int consensusId;
     @Setter
     private ConsensusType cType;
@@ -21,7 +21,7 @@ public class ConsensusPayload {
         READ, STATE, COLLECTED, WRITE, ACCEPT
     }
 
-    public ConsensusPayload(int senderId, int consensusId, ConsensusType cType, String content, KeyService keyService) {
+    public ConsensusPayload(String senderId, int consensusId, ConsensusType cType, String content, KeyService keyService) {
         try {
             this.senderId = senderId;
             this.consensusId = consensusId;
@@ -40,7 +40,7 @@ public class ConsensusPayload {
         }
     }
 
-    public ConsensusPayload(int senderId, int consensusId, ConsensusType cType, String content, String signature) {
+    public ConsensusPayload(String senderId, int consensusId, ConsensusType cType, String content, String signature) {
         this.senderId = senderId;
         this.consensusId = consensusId;
         this.cType = cType;

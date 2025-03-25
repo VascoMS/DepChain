@@ -1,3 +1,3 @@
 package common.model;
 
-public record DeliveryKey(int senderId, Message.Type type) {}
+public record DeliveryKey(String senderId, Message.Type type) {}

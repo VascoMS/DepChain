@@ -1,10 +1,6 @@
 package common.primitives;
 
 import common.model.Message;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.consensus.exception.ErrorMessages;
@@ -13,6 +9,10 @@ import util.CollapsingSet;
 import util.Observer;
 import util.Process;
 import util.Subject;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 public class StubbornLink implements AutoCloseable, Subject<Message>, Observer<Message> {
     private static final Logger logger = LoggerFactory.getLogger(StubbornLink.class);
@@ -35,11 +35,11 @@ public class StubbornLink implements AutoCloseable, Subject<Message>, Observer<M
         flsLink.start();
     }
 
-    public void send(int nodeId, Message message) throws LinkException {
-        if (!flsLink.getPeers().containsKey(nodeId) && nodeId != myProcess.getId()) {
+    public void send(String nodeId, Message message) throws LinkException {
+        if (!flsLink.getPeers().containsKey(nodeId) && !nodeId.equals(myProcess.getId())) {
             throw new LinkException(ErrorMessages.NoSuchNodeError);
         }
-        if(nodeId == myProcess.getId()) {
+        if(nodeId.equals(myProcess.getId())) {
             flsLink.send(nodeId, message);
         } else {
             int sleepTime = baseSleepTime;
@@ -66,14 +66,14 @@ public class StubbornLink implements AutoCloseable, Subject<Message>, Observer<M
                 myProcess.getId(), message.getMessageId(), message.getSenderId());
     }
 
-    protected void sendAck(int senderId, int messageId) throws LinkException {
+    protected void sendAck(String senderId, int messageId) throws LinkException {
         Message ackMessage = new Message(myProcess.getId(), senderId, Message.Type.ACK, "");
         ackMessage.setMessageId(messageId);
         flsLink.send(senderId, ackMessage);
         logger.info("P{}: ACK {} sent to node P{}", myProcess.getId(), messageId, senderId);
     }
 
-    protected Map<Integer, Process> getPeers() {
+    protected Map<String, Process> getPeers() {
         return flsLink.getPeers();
     }
 
@@ -111,7 +111,7 @@ public class StubbornLink implements AutoCloseable, Subject<Message>, Observer<M
             if(message.getType() == Message.Type.ACK) {
                 handleAckMessage(message);
             } else {
-                if(message.getSenderId() != myProcess.getId())
+                if(!message.getSenderId().equals(myProcess.getId()))
                     sendAck(message.getSenderId(), message.getMessageId());
                 notifyObservers(message);
             }

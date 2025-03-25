@@ -4,16 +4,18 @@ import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import common.model.Message;
 import common.primitives.AuthenticatedPerfectLink;
-import server.blockchain.model.Block;
-import server.consensus.test.ConsensusByzantineMode;
-import util.KeyService;
-import server.consensus.core.model.*;
-import util.Process;
-import server.consensus.exception.LinkException;
-import util.SecurityUtil;
 import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import server.blockchain.model.Block;
+import server.consensus.core.model.ConsensusPayload;
+import server.consensus.core.model.WritePair;
+import server.consensus.core.model.WriteState;
+import server.consensus.exception.LinkException;
+import server.consensus.test.ConsensusByzantineMode;
+import util.KeyService;
+import util.Process;
+import util.SecurityUtil;
 
 import java.lang.reflect.Type;
 import java.util.*;
@@ -34,11 +36,11 @@ public class Consensus {
     private final WriteState myState;
     private int epoch;
     private final int epochOffset;
-    private final ConcurrentHashMap<Integer, ConsensusPayload> peersStates;
-    private final ConcurrentHashMap<Integer, WritePair> peersWrites;
-    private final ConcurrentHashMap<Integer, String> peersAccepts;
+    private final ConcurrentHashMap<String, ConsensusPayload> peersStates;
+    private final ConcurrentHashMap<String, WritePair> peersWrites;
+    private final ConcurrentHashMap<String, String> peersAccepts;
     private boolean fetchedFromClientQueue;
-    private int currentLeaderId;
+    private String currentLeaderId;
     private final int byzantineProcesses;
     private long waitingForMessageTimeout;
     private final ConsensusByzantineMode byzantineMode;
@@ -76,8 +78,8 @@ public class Consensus {
         this.byzantineMode = byzantineMode;
     }
 
-    private void handleRead(int myId, int senderId, int consensusId) throws LinkException {
-        if(senderId == currentLeaderId) {
+    private void handleRead(String myId, String senderId, int consensusId) throws LinkException {
+        if(senderId.equals(currentLeaderId)) {
             logger.info("P{}: Received READ Request. Sending state to leader P{}.",
                     myId, currentLeaderId);
             if(myState.getLatestWrite() == null){
@@ -103,7 +105,7 @@ public class Consensus {
         }
     }
 
-    private void handleState(int myId, ConsensusPayload receivedPayload) throws LinkException {
+    private void handleState(String myId, ConsensusPayload receivedPayload) throws LinkException {
         logger.info("P{}: Received STATE Message from P{}, storing.",
                 myId, receivedPayload.getSenderId());
         if(!iAmLeader())
@@ -121,13 +123,13 @@ public class Consensus {
         }
     }
 
-    private boolean handleCollected(int myId, ConsensusPayload receivedPayload) throws Exception {
-        if(receivedPayload.getSenderId() == currentLeaderId) {
+    private boolean handleCollected(String myId, ConsensusPayload receivedPayload) throws Exception {
+        if(receivedPayload.getSenderId().equals(currentLeaderId)) {
             logger.info("P{}: Received COLLECTED Message from leader P{}.",
                     myId, receivedPayload.getSenderId());
 
             // Parse and verify collected state signatures
-            HashMap<Integer, ConsensusPayload> collectedStates = parseCollectedStates(receivedPayload);
+            HashMap<String, ConsensusPayload> collectedStates = parseCollectedStates(receivedPayload);
             if (!verifyCollectedStates(myId, collectedStates)) {
                 return false; // Abort if verification fails
             }
@@ -155,7 +157,7 @@ public class Consensus {
         return true;
     }
 
-    private boolean handleWrite(int myId, ConsensusPayload receivedPayload) throws LinkException {
+    private boolean handleWrite(String myId, ConsensusPayload receivedPayload) throws LinkException {
         logger.info("P{}: Received WRITE Message from P{}.",
                 myId, receivedPayload.getSenderId());
         WritePair collectedWrite = new Gson().fromJson(
@@ -196,7 +198,7 @@ public class Consensus {
         return true;
     }
 
-    private boolean handleAccept(int myId, ConsensusPayload receivedPayload) {
+    private boolean handleAccept(String myId, ConsensusPayload receivedPayload) {
         logger.info("P{}: Received ACCEPT Message from P{}.",
                 myId, receivedPayload.getSenderId());
         peersAccepts.putIfAbsent(receivedPayload.getSenderId(), receivedPayload.getContent());
@@ -216,7 +218,7 @@ public class Consensus {
     }
 
     public Block collect(int consensusId) throws Exception {
-        int myId = myProcess.getId();
+        String myId = myProcess.getId();
         boolean delivered = false;
         // Loop to keep receiving messages until delivery can be done.
         while(!delivered) {
@@ -262,7 +264,7 @@ public class Consensus {
 
 
     public Block runAsLeader() throws Exception {
-        int myId = myProcess.getId();
+        String myId = myProcess.getId();
         ConsensusPayload cPayload = new ConsensusPayload(myId, roundId, READ, null, keyService);
         String payloadString = new Gson().toJson(cPayload);
         logger.info("P{}: Starting server.consensus", myProcess.getId());
@@ -270,7 +272,7 @@ public class Consensus {
         link.send(myId, new Message(myId, myId, Message.Type.CONSENSUS, payloadString));
         // Send the message to everybody else
         for (Process process : peers) {
-            int processId = process.getId();
+            String processId = process.getId();
             link.send(process.getId(), new Message(myId, processId, Message.Type.CONSENSUS, payloadString));
         }
         return collect(roundId);
@@ -280,12 +282,12 @@ public class Consensus {
         return collect(roundId);
     }
 
-    private HashMap<Integer, ConsensusPayload> parseCollectedStates(ConsensusPayload receivedPayload) {
-        Type type = new TypeToken<HashMap<Integer, ConsensusPayload>>() {}.getType();
+    private HashMap<String, ConsensusPayload> parseCollectedStates(ConsensusPayload receivedPayload) {
+        Type type = new TypeToken<HashMap<String, ConsensusPayload>>() {}.getType();
         return new Gson().fromJson(receivedPayload.getContent(), type);
     }
 
-    private boolean verifyCollectedStates(int myId, HashMap<Integer, ConsensusPayload> collectedStates) {
+    private boolean verifyCollectedStates(String myId, HashMap<String, ConsensusPayload> collectedStates) {
         try {
             for (ConsensusPayload processState : collectedStates.values()) {
                 if (!verifyProcessSignature(myId, processState)) {
@@ -299,7 +301,7 @@ public class Consensus {
         }
     }
 
-    private boolean verifyProcessSignature(int myId, ConsensusPayload processState) throws Exception {
+    private boolean verifyProcessSignature(String myId, ConsensusPayload processState) throws Exception {
         boolean isValid = SecurityUtil.verifySignature(
                 processState.getSenderId(),
                 processState.getConsensusId(),
@@ -317,7 +319,7 @@ public class Consensus {
         return isValid;
     }
 
-    private List<WriteState> extractWriteStates(HashMap<Integer, ConsensusPayload> collectedStates) {
+    private List<WriteState> extractWriteStates(HashMap<String, ConsensusPayload> collectedStates) {
         return collectedStates.values().stream()
                 .map(state -> new Gson().fromJson(state.getContent(), WriteState.class))
                 .toList();
@@ -329,7 +331,7 @@ public class Consensus {
                 .toList();
     }
 
-    private void sendWriteMessage(int myId, int consensusId, Block writeValue, int epoch) throws LinkException {
+    private void sendWriteMessage(String myId, int consensusId, Block writeValue, int epoch) throws LinkException {
         logger.info("P{}: Sending WRITE message, timestamp {}, value {}", myId, epoch, writeValue);
 
         WritePair newWrite = new WritePair(epoch, writeValue);
@@ -347,7 +349,7 @@ public class Consensus {
     }
 
 
-    private Block decideToWriteValue(int myId, List<WritePair> writePairs, List<List<WritePair>> writeSets, Block leaderValue) {
+    private Block decideToWriteValue(String myId, List<WritePair> writePairs, List<List<WritePair>> writeSets, Block leaderValue) {
         WritePair mostRecentWritePair = writePairs.stream()
                 .filter(Objects::nonNull)
                 .max(Comparator.comparingInt(WritePair::timestamp)).orElse(null);
@@ -364,7 +366,7 @@ public class Consensus {
         }
     }
 
-    private void sendConsensusMessage(int myId, ConsensusPayload collectedPayload) throws LinkException {
+    private void sendConsensusMessage(String myId, ConsensusPayload collectedPayload) throws LinkException {
         logger.info("P{}: Sending {} message: {}", myId, collectedPayload.getCType(), collectedPayload.getContent());
         String payloadToSend = new Gson().toJson(collectedPayload);
         // Sending accept to myself
@@ -374,7 +376,7 @@ public class Consensus {
         );
         // Sending accept to all peers
         for (Process process : peers) {
-            int processId = process.getId();
+            String processId = process.getId();
             link.send(
                     process.getId(),
                     new Message(myId, processId, Message.Type.CONSENSUS, payloadToSend)
@@ -382,12 +384,12 @@ public class Consensus {
         }
     }
 
-    public int getRoundRobinLeader(int epoch, int numNodes){
-        return (epoch + epochOffset) % numNodes;
+    public String getRoundRobinLeader(int epoch, int numNodes){
+        return "P" + ((epoch + epochOffset) % numNodes);
     }
 
     public boolean iAmLeader() {
-        return myProcess.getId() == currentLeaderId;
+        return myProcess.getId().equals(currentLeaderId);
     }
 
 
@@ -395,7 +397,7 @@ public class Consensus {
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;
         Consensus consensus = (Consensus) o;
-        return epoch == consensus.epoch && currentLeaderId == consensus.currentLeaderId && byzantineProcesses == consensus.byzantineProcesses && Objects.equals(broker, consensus.broker) && Objects.equals(myProcess, consensus.myProcess) && Objects.deepEquals(peers, consensus.peers) && Objects.equals(link, consensus.link) && Objects.equals(keyService, consensus.keyService) && Objects.equals(myState, consensus.myState) && Objects.equals(peersStates, consensus.peersStates) && Objects.equals(peersWrites, consensus.peersWrites) && Objects.equals(peersAccepts, consensus.peersAccepts) && Objects.equals(decision, consensus.decision);
+        return epoch == consensus.epoch && currentLeaderId.equals(consensus.currentLeaderId) && byzantineProcesses == consensus.byzantineProcesses && Objects.equals(broker, consensus.broker) && Objects.equals(myProcess, consensus.myProcess) && Objects.deepEquals(peers, consensus.peers) && Objects.equals(link, consensus.link) && Objects.equals(keyService, consensus.keyService) && Objects.equals(myState, consensus.myState) && Objects.equals(peersStates, consensus.peersStates) && Objects.equals(peersWrites, consensus.peersWrites) && Objects.equals(peersAccepts, consensus.peersAccepts) && Objects.equals(decision, consensus.decision);
     }
 
     @Override

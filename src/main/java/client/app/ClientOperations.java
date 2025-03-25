@@ -23,11 +23,11 @@ class ClientOperations implements Observer<Message> {
     private static final String KEYSTORE_PATH = "src/main/java/client/keys/keystore.p12";
     private static final String KEYSTORE_PASS = "mypass";
     private final AuthenticatedPerfectLink link;
-    private final int myId;
+    private final String myId;
     private final KeyService keyService;
     private final Map<String, List<ServerResponse>> receivedResponses;
     private final Map<String, CompletableFuture<ServerResponse>> requestMap;
-    private final int[] serverIds = {0, 1, 2, 3}; // Known servers
+    private final String[] serverIds = {"p0", "p1", "p2", "p3"}; // Known servers
     private final int byzantineFailures = (serverIds.length - 1) / 3;
 
     public ClientOperations(Process myProcess, Process[] serverProcesses)  throws Exception {
@@ -37,8 +37,6 @@ class ClientOperations implements Observer<Message> {
                 serverProcesses,
                 LinkType.CLIENT_TO_SERVER,
                 100,
-                "c",
-                "p",
                 KEYSTORE_PATH
         );
         this.keyService = new KeyService(KEYSTORE_PATH, KEYSTORE_PASS);
@@ -85,7 +83,7 @@ class ClientOperations implements Observer<Message> {
         CompletableFuture<ServerResponse> future = new CompletableFuture<>();
         requestMap.put(clientRequest.id(), future);
         receivedResponses.put(clientRequest.id(), new ArrayList<>());
-        for (int serverId : serverIds) {
+        for (String serverId : serverIds) {
             Message message = new Message(
                     myId,
                     serverId,

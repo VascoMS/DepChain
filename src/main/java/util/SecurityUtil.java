@@ -1,21 +1,19 @@
 package util;
 
-import java.util.Objects;
-import javax.crypto.Cipher;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-
-import server.blockchain.model.Block;
-import server.consensus.core.model.ConsensusPayload;
 import common.model.Message;
 import common.model.SignedMessage;
 import common.model.Transaction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import server.consensus.core.model.ConsensusPayload;
 
+import javax.crypto.Cipher;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
 import java.security.*;
 import java.util.Base64;
+import java.util.Objects;
 
 public class SecurityUtil {
 
@@ -113,13 +111,21 @@ public class SecurityUtil {
 
         byte[][] dataToSign = {
                 intToBytes(message.getMessageId()),
-                intToBytes(message.getSenderId()),
-                intToBytes(message.getDestinationId()),
+                message.getSenderId().getBytes(),
+                message.getDestinationId().getBytes(),
                 message.getType().name().getBytes(),
                 message.getPayload() != null ? message.getPayload().getBytes() : null
         };
 
         return createSignature(signer, dataToSign);
+    }
+
+    public static boolean verifySignature(String signature, String data, PublicKey publicKey) throws Exception {
+        logger.info("Verifying signature...");
+        Signature verifier = initVerifier(publicKey);
+        verifier.update(data.getBytes());
+        byte[] decodedSignature = Base64.getDecoder().decode(signature);
+        return verifier.verify(decodedSignature);
     }
 
     public static boolean verifySignature(SignedMessage message, PublicKey publicKey) throws Exception {
@@ -128,8 +134,8 @@ public class SecurityUtil {
 
         byte[][] dataToVerify = {
                 intToBytes(message.getMessageId()),
-                intToBytes(message.getSenderId()),
-                intToBytes(message.getDestinationId()),
+                message.getSenderId().getBytes(),
+                message.getDestinationId().getBytes(),
                 message.getType().name().getBytes(),
                 message.getPayload() != null ? message.getPayload().getBytes() : null
         };
@@ -138,7 +144,7 @@ public class SecurityUtil {
     }
 
     public static String signConsensusPayload(
-            int senderId,
+            String senderId,
             int consensusId,
             ConsensusPayload.ConsensusType cType,
             String content,
@@ -148,7 +154,7 @@ public class SecurityUtil {
         Signature signer = initSigner(privateKey);
 
         byte[][] dataToSign = {
-                intToBytes(senderId),
+                senderId.getBytes(),
                 Integer.toString(consensusId).getBytes(),
                 cType.name().getBytes(),
                 content != null ? content.getBytes() : null
@@ -158,7 +164,7 @@ public class SecurityUtil {
     }
 
     public static boolean verifySignature(
-            int senderId,
+            String senderId,
             int consensusId,
             ConsensusPayload.ConsensusType cType,
             String content,
@@ -169,7 +175,7 @@ public class SecurityUtil {
         Signature verifier = initVerifier(publicKey);
 
         byte[][] dataToVerify = {
-                intToBytes(senderId),
+                senderId.getBytes(),
                 Integer.toString(consensusId).getBytes(),
                 cType.name().getBytes(),
                 content != null ? content.getBytes() : null
@@ -184,24 +190,31 @@ public class SecurityUtil {
 
         byte[][] dataToVerify = {
                 transaction.id().getBytes(),
-                intToBytes(transaction.from()),
+                transaction.from().getBytes(),
                 transaction.data() != null ? transaction.data().getBytes() : null
         };
 
         return verifySignature(verifier, dataToVerify, transaction.signature());
     }
 
-    public static String signTransaction(String transactionId, int clientId, String content, PrivateKey privateKey) throws Exception {
+    public static String signTransaction(String transactionId, String clientId, String content, PrivateKey privateKey) throws Exception {
         logger.info("Signing transaction...");
         Signature signer = initSigner(privateKey);
 
         byte[][] dataToSign = {
                 transactionId.getBytes(),
-                ByteBuffer.allocate(4).putInt(clientId).array(),
+                clientId.getBytes(),
                 content.getBytes()
         };
 
         return createSignature(signer, dataToSign);
+    }
+
+    public static String signString(String content, PrivateKey privateKey) throws Exception {
+        logger.info("Signing string...");
+        Signature signer = initSigner(privateKey);
+        signer.update(content.getBytes());
+        return Base64.getEncoder().encodeToString(signer.sign());
     }
 
     public static String generateHMAC(Message message, SecretKeySpec secretKey) throws Exception {
@@ -209,8 +222,8 @@ public class SecurityUtil {
         Mac mac = initHMAC(secretKey);
         byte[][] data = {
                 intToBytes(message.getMessageId()),
-                intToBytes(message.getSenderId()),
-                intToBytes(message.getDestinationId()),
+                message.getSenderId().getBytes(),
+                message.getDestinationId().getBytes(),
                 message.getType().name().getBytes(),
                 message.getPayload() != null ? message.getPayload().getBytes() : null
         };
@@ -222,8 +235,8 @@ public class SecurityUtil {
         Mac mac = initHMAC(secretKey);
         byte[][] data = {
                 intToBytes(message.getMessageId()),
-                intToBytes(message.getSenderId()),
-                intToBytes(message.getDestinationId()),
+                message.getSenderId().getBytes(),
+                message.getDestinationId().getBytes(),
                 message.getType().name().getBytes(),
                 message.getPayload() != null ? message.getPayload().getBytes() : null
         };
@@ -247,7 +260,8 @@ public class SecurityUtil {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             for (byte[] d : data) {
-                digest.update(d);
+                if (d != null)
+                    digest.update(d);
             }
             byte[] hash = digest.digest();
             return Base64.getEncoder().encodeToString(hash);
