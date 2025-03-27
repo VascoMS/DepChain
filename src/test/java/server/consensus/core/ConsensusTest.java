@@ -6,15 +6,16 @@ import common.model.Transaction;
 import common.primitives.AuthenticatedPerfectLink;
 import common.primitives.LinkType;
 import org.junit.jupiter.api.*;
+import org.mockito.Mock;
 import server.blockchain.model.Block;
-import server.blockchain.model.Blockchain;
+import server.blockchain.BlockchainImpl;
 import server.consensus.core.model.ConsensusOutcomeDto;
 import server.consensus.core.model.ConsensusPayload;
 import server.consensus.core.model.WritePair;
 import server.consensus.core.model.WriteState;
 import server.consensus.core.primitives.ConsensusBroker;
 import server.consensus.test.ConsensusByzantineMode;
-import server.evm.ExecutionEngine;
+import server.evm.core.ExecutionEngine;
 import util.KeyService;
 import util.Observer;
 import util.Process;
@@ -41,10 +42,10 @@ public class ConsensusTest {
     private static AuthenticatedPerfectLink carlLink;
     private static AuthenticatedPerfectLink jeffLink;
 
-    private static Blockchain aliceBlockchain;
-    private static Blockchain bobBlockchain;
-    private static Blockchain carlBlockchain;
-    private static Blockchain jeffBlockchain;
+    private static BlockchainImpl aliceBlockchain;
+    private static BlockchainImpl bobBlockchain;
+    private static BlockchainImpl carlBlockchain;
+    private static BlockchainImpl jeffBlockchain;
 
     private static ConsensusBroker aliceBroker;
     private static ConsensusBroker bobBroker;
@@ -58,14 +59,24 @@ public class ConsensusTest {
 
     private static final String privateKeyPrefix = "p";
 
+    @Mock
+    public static ExecutionEngine aliceEngine;
+    @Mock
+    public static ExecutionEngine bobEngine;
+    @Mock
+    public static ExecutionEngine carlEngine;
+    @Mock
+    public static ExecutionEngine jeffEngine;
+
+
 
     @BeforeAll
     public static void startLinks() throws Exception {
         // Assemble
-        aliceProcess = new Process("P0", "localhost", 1024);
-        bobProcess = new Process("P1", "localhost", 1025);
-        carlProcess = new Process("P2", "localhost", 1026);
-        jeffProcess =  new Process("P3", "localhost", 1027);
+        aliceProcess = new Process("p0", "localhost", 1024);
+        bobProcess = new Process("p1", "localhost", 1025);
+        carlProcess = new Process("p2", "localhost", 1026);
+        jeffProcess =  new Process("p3", "localhost", 1027);
 
         serverKeyService = new KeyService(SecurityUtil.SERVER_KEYSTORE_PATH, "mypass");
         clientKeyService = new KeyService(SecurityUtil.CLIENT_KEYSTORE_PATH, "mypass");
@@ -94,10 +105,10 @@ public class ConsensusTest {
                 100, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
-        aliceBlockchain = new Blockchain(serverKeyService, new ExecutionEngine());
-        bobBlockchain = new Blockchain(serverKeyService, new ExecutionEngine());
-        carlBlockchain = new Blockchain(serverKeyService, new ExecutionEngine());
-        jeffBlockchain = new Blockchain(serverKeyService, new ExecutionEngine());
+        aliceBlockchain = new BlockchainImpl(serverKeyService, aliceEngine);
+        bobBlockchain = new BlockchainImpl(serverKeyService, bobEngine);
+        carlBlockchain = new BlockchainImpl(serverKeyService, carlEngine);
+        jeffBlockchain = new BlockchainImpl(serverKeyService, jeffEngine);
     }
 
     @BeforeEach

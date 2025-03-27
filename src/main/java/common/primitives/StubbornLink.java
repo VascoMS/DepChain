@@ -36,6 +36,9 @@ public class StubbornLink implements AutoCloseable, Subject<Message>, Observer<M
     }
 
     public void send(String nodeId, Message message) throws LinkException {
+        if (flsLink.isClosed()) {
+            throw new LinkException(ErrorMessages.LinkClosedException);
+        }
         if (!flsLink.getPeers().containsKey(nodeId) && !nodeId.equals(myProcess.getId())) {
             throw new LinkException(ErrorMessages.NoSuchNodeError);
         }
@@ -80,6 +83,8 @@ public class StubbornLink implements AutoCloseable, Subject<Message>, Observer<M
     public void waitForTermination() {
         flsLink.waitForTermination();
     }
+
+    public boolean isClosed() { return flsLink.isClosed(); }
 
     @Override
     public void addObserver(Observer observer) {

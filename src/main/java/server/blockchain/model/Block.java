@@ -22,7 +22,7 @@ public class Block {
         this.blockHash = generateBlockHash();
     }
 
-    protected String generateBlockHash() {
+    public String generateBlockHash() {
         List<String> transactionHashes = transactions.stream().map(Transaction::generateHash).toList();
         String merkleRoot = MerkleTree.getMerkleRoot(transactionHashes);
         byte[][] data = {

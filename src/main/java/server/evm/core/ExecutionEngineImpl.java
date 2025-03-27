@@ -1,4 +1,4 @@
-package server.evm;
+package server.evm.core;
 
 import com.google.gson.*;
 import common.model.Transaction;
@@ -11,25 +11,28 @@ import org.hyperledger.besu.evm.account.Account;
 import org.hyperledger.besu.evm.account.MutableAccount;
 import org.hyperledger.besu.evm.fluent.EVMExecutor;
 import org.hyperledger.besu.evm.fluent.SimpleWorld;
-import org.hyperledger.besu.evm.*;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.tracing.StandardJsonTracer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import server.consensus.exception.EvmExecutorException;
+import server.evm.model.TransactionResult;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
-public class ExecutionEngine {
-    private static final Logger logger = LoggerFactory.getLogger(ExecutionEngine.class);
+public class ExecutionEngineImpl implements ExecutionEngine {
+    private static final Logger logger = LoggerFactory.getLogger(ExecutionEngineImpl.class);
     private static final int BASE_NONCE = 0;
     private final SimpleWorld state;
     private final EVMExecutor evmExecutor;
     private final ByteArrayOutputStream executionOutputStream;
+
+    private final ConcurrentHashMap<String, CompletableFuture<TransactionResult>> transactionFutures;
 
     public static String ALICE_ADDRESS = "deaddeaddeaddeaddeaddeaddeaddeaddeaddead";
     public static String BOB_ADDRESS = "beefbeefbeefbeefbeefbeefbeefbeefbeefbeef";
@@ -38,11 +41,13 @@ public class ExecutionEngine {
 
     private final Set<String> readFunctionIdentifiers;
 
-    public ExecutionEngine() {
+    public ExecutionEngineImpl() {
         this.state = new SimpleWorld();
-        this.evmExecutor = new EVMExecutor(EvmSpecVersion.CANCUN);
+
+        this.evmExecutor = EVMExecutor.evm(EvmSpecVersion.CANCUN);
         readFunctionIdentifiers = Set.of("70a08231", "313ce567", "06fdde03", "95d89b41", "18160ddd");
         this.executionOutputStream = new ByteArrayOutputStream();
+        this.transactionFutures = new ConcurrentHashMap<>();
         PrintStream printStream = new PrintStream(executionOutputStream);
         StandardJsonTracer tracer = new StandardJsonTracer(printStream, true, true, true, true);
         evmExecutor.tracer(tracer);
@@ -69,6 +74,7 @@ public class ExecutionEngine {
         Address accountAddress = Address.fromHexString(addressHex);
 
         int balance = extractBalance(accountJson);
+
         state.createAccount(accountAddress, BASE_NONCE, Wei.fromEth(balance));
 
         MutableAccount account = state.getAccount(accountAddress);
@@ -118,29 +124,35 @@ public class ExecutionEngine {
         throw new IllegalArgumentException("Unsupported storage value type");
     }
 
-    public boolean executeTransactions(List<Transaction> transactions) {
+    public void executeTransactions(List<Transaction> transactions) {
         for (Transaction transaction : transactions) {
-            try {
-                executeTransaction(transaction);
-            } catch (EvmExecutorException e) {
-                logger.error("Error executing transaction {} with calldata {}", transaction.id(), transaction.data(), e);
-                return false;
-            }
+            TransactionResult result = executeTransaction(transaction);
+            getTransactionFuture(transaction.id()).complete(result);
         }
-        return true;
     }
 
-    public String performOffChainOperation(Transaction transaction) {
-        return null; //TODO
+    public CompletableFuture<TransactionResult> getTransactionFuture(String transactionId) {
+        transactionFutures.putIfAbsent(transactionId, new CompletableFuture<>());
+        return transactionFutures.get(transactionId);
     }
 
-    private boolean executeTransaction(Transaction transaction) throws EvmExecutorException {
+    public TransactionResult performOffChainOperation(Transaction transaction){
+        String callDataPrefix = transaction.data().substring(0, 8);
+        if(readFunctionIdentifiers.contains(callDataPrefix)) {
+            return null; //TODO
+
+        }
+        return TransactionResult.success(); //TODO: Add read result
+    }
+
+    private TransactionResult executeTransaction(Transaction transaction) {
+        logger.info("Executing transaction: {}", transaction);
         Address sender = Address.fromHexString(transaction.from());
         Address receiver = Address.fromHexString(transaction.to());
         Bytes callData = Bytes.fromHexString(transaction.data());
         Account contractAccount = state.getAccount(receiver);
         if (contractAccount == null) {
-            throw new EvmExecutorException("Contract account not found for address: " + receiver);
+            return TransactionResult.fail("Contract account not found");
         }
         Bytes code = contractAccount.getCode();
         evmExecutor.sender(sender);
@@ -150,32 +162,61 @@ public class ExecutionEngine {
         evmExecutor.messageFrameType(MessageFrame.Type.MESSAGE_CALL);
         evmExecutor.callData(callData);
         evmExecutor.execute();
-        return extractBooleanFromReturnData(executionOutputStream);
+
+        String error = getError(executionOutputStream);
+        if(error != null) {
+            logger.info("Error executing transaction: {}", error);
+            String errorMessage = parseError(error);
+            return TransactionResult.fail(errorMessage);
+        }
+        return TransactionResult.success();
     }
 
-    private static String extractReturnData(ByteArrayOutputStream byteArrayOutputStream) {
+    public static String getError(ByteArrayOutputStream byteArrayOutputStream) {
         String[] lines = byteArrayOutputStream.toString().split("\\r?\\n");
         JsonObject jsonObject = JsonParser.parseString(lines[lines.length - 1]).getAsJsonObject();
-
-        String memory = jsonObject.get("memory").getAsString();
-
-        JsonArray stack = jsonObject.get("stack").getAsJsonArray();
-        int offset = Integer.decode(stack.get(stack.size() - 1).getAsString());
-        int size = Integer.decode(stack.get(stack.size() - 2).getAsString());
-
-        return memory.substring(2 + offset * 2, 2 + offset * 2 + size * 2);
+        return jsonObject.get("error").getAsString();
     }
 
-    private static int extractIntegerFromReturnData(ByteArrayOutputStream byteArrayOutputStream) {
-        String returnData = extractReturnData(byteArrayOutputStream);
-        return Integer.decode("0x" + returnData);
+    public static String parseError(String error) {
+        String errorSignature = error.substring(0, 8);
+        return switch (errorSignature) {
+            case "e450d38c" -> // ERC20InsufficientBalance(address,uint256,uint256)
+                    "ERC20 Insufficient Balance for: " + extractParameter(error, 0) +
+                            " Balance: " + extractParameter(error, 1)
+                            + " Needed: " + extractParameter(error, 2);
+            case "96c6fd1e" -> // ERC20InvalidSender(address)
+                    "ERC20 Invalid Sender: " + extractParameter(error, 0);
+            case "ec442f05" -> // ERC20InvalidReceiver(address)
+                    "ERC20 Invalid Receiver: " + extractParameter(error, 0);
+            case "ea558bdf" -> // ERC20InsufficientAllowance(address, uint256, uint256)
+                    "ERC20 Insufficient Allowance: " + extractParameter(error, 0) +
+                            " Allowance: " + extractParameter(error, 1)
+                            + " Needed: " + extractParameter(error, 2);
+            case "94280d62" -> // ERC20InvalidSpender(address)
+                    "ERC20 Invalid Spender: " + extractParameter(error, 0);
+            case "118cdaa7" -> // OwnableUnauthorizedAccount(address)
+                    "Ownable Unauthorized Account: " + extractParameter(error, 0);
+            case "1e4fbdf7" -> // OwnableInvalidOwner(address)
+                    "Ownable Invalid Owner: " + extractParameter(error, 0);
+            case "ffa4e618" -> // Blacklisted(address)
+                    "Blacklisted Account: " + extractParameter(error, 0);
+            default -> "Unknown Error: " + errorSignature;
+        };
     }
 
-    private static boolean extractBooleanFromReturnData(ByteArrayOutputStream byteArrayOutputStream) {
-        // Parse the last byte (in Solidity, booleans are typically the last byte)
-        // We'll check if the last byte is non-zero (true) or zero (false)
-        String returnData = extractReturnData(byteArrayOutputStream);
-        String lastByte = returnData.substring(returnData.length() - 2);
-        return !lastByte.equals("00");
+    private static String extractParameter(String errorData, int index) {
+        return "0x" + trimLeadingZeros(errorData.substring(10 + 64 * index, 10 + 64 * (index + 1)));
     }
+
+    public static String trimLeadingZeros(String hexString) {
+        if (hexString.startsWith("0x")) {
+            hexString = hexString.substring(2);
+        }
+
+        hexString = hexString.replaceFirst("^0+", "");
+
+        return hexString.isEmpty() ? "0" : hexString;
+    }
+
 }

@@ -68,11 +68,9 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
             }
         }
 
-        // Since servers are identified with numbers, we'll convert strings to integers
-
         List<String> peersToShareKeys = (linkType == LinkType.SERVER_TO_SERVER)
                 ? Arrays.stream(peers).filter(peer -> myProcess.getId().compareTo(peer.getId()) < 0)
-                .map(Object::toString)
+                .map(Process::getId)
                 .toList()
                 : Arrays.stream(peers).map(Process::getId).toList();
 
@@ -100,7 +98,10 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
 
     public void send(String nodeId, Message message) throws LinkException {
 
-        if (!stbLink.getPeers().containsKey(nodeId) && nodeId != myProcess.getId()) {
+        if (stbLink.isClosed()) {
+            throw new LinkException(ErrorMessages.LinkClosedException);
+        }
+        if (!stbLink.getPeers().containsKey(nodeId) && !nodeId.equals(myProcess.getId())) {
             throw new LinkException(ErrorMessages.NoSuchNodeError);
         }
 
@@ -194,6 +195,8 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
     public void waitForTermination() {
         stbLink.waitForTermination();
     }
+
+    public boolean isClosed() { return stbLink.isClosed(); }
 
     @Override
     public void addObserver(Observer<Message> observer) {

@@ -6,12 +6,13 @@ import common.primitives.AuthenticatedPerfectLink;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.consensus.exception.LinkException;
+import server.consensus.exception.TransactionExecutionException;
+import server.evm.model.TransactionResult;
 import util.Observer;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-// TODO: Change requests to reflect blockchain operations.
 public class ClientRequestBroker implements Observer<Message> {
 
     private static final Logger logger = LoggerFactory.getLogger(ClientRequestBroker.class);
@@ -24,7 +25,7 @@ public class ClientRequestBroker implements Observer<Message> {
         this.myId = myId;
         this.link = link;
         this.node = node;
-        this.executor = Executors.newSingleThreadExecutor();
+        this.executor = Executors.newFixedThreadPool(5);
     }
 
     @Override
@@ -34,10 +35,10 @@ public class ClientRequestBroker implements Observer<Message> {
         executor.execute(() -> handleRequest(message.getSenderId(), clientRequest));
     }
 
-    public void start() {
+    public void start(String genesisFilePath) {
         link.addObserver(this);
         link.start();
-        node.start();
+        node.start(genesisFilePath);
         link.waitForTermination();
     }
 
@@ -62,13 +63,17 @@ public class ClientRequestBroker implements Observer<Message> {
     }
     
     private ServerResponse balance(String clientReqId, Transaction transaction) {
-        // TODO: Balance should go to engine.
-        return new ServerResponse(clientReqId, true, "TODO");
+        TransactionResult result = node.submitOffChainTransaction(transaction);
+        return new ServerResponse(clientReqId, result.isSuccess(), result.message());
     }
 
     private ServerResponse onChainTransaction(String clientReqId, Transaction transaction) {
-        node.submitOnChainTransaction(transaction);
-        return new ServerResponse(clientReqId, true, "TODO");
+        try {
+            TransactionResult result = node.submitOnChainTransaction(transaction);
+            return new ServerResponse(clientReqId, result.isSuccess(), result.message());
+        } catch (Exception e) {
+            logger.error("P{}: Error in handling request from client: {}", myId, e.getMessage());
+            return new ServerResponse(clientReqId, false, "Server Error");
+        }
     }
-
 }

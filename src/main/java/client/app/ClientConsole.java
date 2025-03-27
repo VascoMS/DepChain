@@ -24,6 +24,10 @@ class ClientConsole {
         System.out.println("Choose an option:");
         System.out.println("append <value>");
         System.out.println("read");
+        System.out.println("balance");
+        System.out.println("transfer <recipient> <value>");
+        System.out.println("add-blacklist <address>");
+        System.out.println("remove-blacklist <address>");
         System.out.println("exit");
     }
 
@@ -48,6 +52,51 @@ class ClientConsole {
                     }
                     String result = operations.read();
                     System.out.println(result);
+                }
+                case "balance" -> {
+                    if(args.length != 0) {
+                        System.out.println("Invalid number of arguments, balance command does not take any arguments.");
+                        return;
+                    }
+                    int balance = operations.balance();
+                    System.out.println("Current balance: " + balance);
+                }
+                case "transfer" -> {
+                    if(args.length != 2) {
+                        System.out.println("Invalid number of arguments, " +
+                                "provide the address of the receiver and the amount of tokens transfered.");
+                        return;
+                    }
+                    try {
+                        String recipientAddress = args[0];
+                        int tokensTransferred = Integer.parseInt(args[1]);
+                        if(tokensTransferred > 0) {
+                            operations.transfer(recipientAddress, tokensTransferred);
+                        } else {
+                            System.out.println("Invalid token amount: must be a positive integer.");
+                        }
+                    } catch(NumberFormatException nfe) {
+                        System.out.println("Invalid inputs: Address must be a hex string " +
+                                "and tokens must be a positive integer");
+                    }
+                }
+                case "add-blacklist" -> {
+                    if(args.length != 1) {
+                        System.out.println("Invalid number of arguments, " +
+                                "provide the address of the one being blacklisted.");
+                        return;
+                    }
+                    String blacklistAddress = args[0];
+                    operations.addToBlacklist(blacklistAddress);
+                }
+                case "remove-blacklist" -> {
+                    if(args.length != 1) {
+                        System.out.println("Invalid number of arguments, " +
+                                "provide the address of the one not being blacklisted.");
+                        return;
+                    }
+                    String blacklistAddress = args[0];
+                    operations.removeFromBlacklist(blacklistAddress);
                 }
                 case "exit" -> {
                     if (args.length != 0) {

@@ -1,9 +1,11 @@
-package server.blockchain.model;
+package server.blockchain;
 
 import com.google.gson.Gson;
 import common.model.Transaction;
 import org.slf4j.Logger;
-import server.evm.ExecutionEngine;
+import server.blockchain.model.Block;
+import server.blockchain.model.GenesisBlock;
+import server.evm.core.ExecutionEngine;
 import util.KeyService;
 
 import java.io.FileReader;
@@ -11,13 +13,13 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-public class Blockchain {
-    private static final Logger logger = org.slf4j.LoggerFactory.getLogger(Blockchain.class);
+public class BlockchainImpl implements Blockchain {
+    private static final Logger logger = org.slf4j.LoggerFactory.getLogger(BlockchainImpl.class);
     private final List<Block> blockchain;
     private final KeyService keyService;
     private final ExecutionEngine executionEngine;
 
-    public Blockchain(KeyService keyService, ExecutionEngine executionEngine) {
+    public BlockchainImpl(KeyService keyService, ExecutionEngine executionEngine) {
         this.blockchain = new ArrayList<>();
         this.keyService = keyService;
         this.executionEngine = executionEngine;
@@ -101,6 +103,7 @@ public class Blockchain {
     }
 
     public synchronized void addBlock(Block block) {
+        logger.info("Adding block to blockchain: {}", block.getBlockHash());
         blockchain.add(block);
         executionEngine.executeTransactions(block.getTransactions());
     }

@@ -31,8 +31,8 @@ public class LinkTest {
     public static void startLinks() throws Exception {
         // Assemble
 
-        aliceProcess = new Process("P1", "localhost", 1024);
-        bobProcess = new Process("P2", "localhost", 1025);
+        aliceProcess = new Process("p1", "localhost", 1024);
+        bobProcess = new Process("p2", "localhost", 1025);
 
         aliceLink = new AuthenticatedPerfectLink(aliceProcess, new Process[]{bobProcess}, LinkType.SERVER_TO_SERVER,100, SecurityUtil.SERVER_KEYSTORE_PATH);
         bobLink = new AuthenticatedPerfectLink(bobProcess, new Process[]{aliceProcess}, LinkType.SERVER_TO_SERVER,  100, SecurityUtil.SERVER_KEYSTORE_PATH);
@@ -47,7 +47,7 @@ public class LinkTest {
         CountDownLatch latch = new CountDownLatch(1);
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
 
-        Message aliceMessage = new Message("P1", "P2", Message.Type.UNICAST, "hello");
+        Message aliceMessage = new Message("p1", "p2", Message.Type.UNICAST, "hello");
 
         // Assert
         Observer<Message> bobObserver = message -> {
@@ -63,7 +63,7 @@ public class LinkTest {
         };
 
         bobLink.addObserver(bobObserver);
-        aliceLink.send("P2", aliceMessage);
+        aliceLink.send("p2", aliceMessage);
         latch.await();
         bobLink.removeObserver(bobObserver);
 
@@ -79,7 +79,7 @@ public class LinkTest {
         CountDownLatch latch = new CountDownLatch(1);
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
 
-        Message aliceMessage = new Message("P1", "P1", Message.Type.UNICAST, "hello");
+        Message aliceMessage = new Message("p1", "p1", Message.Type.UNICAST, "hello");
 
         // Assert
         Observer<Message> aliceObserver = message -> {
@@ -94,7 +94,7 @@ public class LinkTest {
         };
 
         aliceLink.addObserver(aliceObserver);
-        aliceLink.send("P1", aliceMessage);
+        aliceLink.send("p1", aliceMessage);
         latch.await();
         aliceLink.removeObserver(aliceObserver);
 

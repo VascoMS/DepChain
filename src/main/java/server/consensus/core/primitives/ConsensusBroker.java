@@ -6,8 +6,8 @@ import common.model.Transaction;
 import common.primitives.AuthenticatedPerfectLink;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import server.blockchain.Blockchain;
 import server.blockchain.model.Block;
-import server.blockchain.model.Blockchain;
 import server.consensus.core.model.ConsensusOutcomeDto;
 import server.consensus.core.model.ConsensusPayload;
 import server.consensus.test.ConsensusByzantineMode;
@@ -30,8 +30,8 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     private int totalEpochs;
     private final int byzantineProcesses;
     private final KeyService keyService;
-    private final BlockingQueue<Transaction> clientRequests = new LinkedBlockingQueue<>();
     private final Blockchain blockchain;
+    private final BlockingQueue<Transaction> mempool = new LinkedBlockingQueue<>();
     private final Map<Integer, Consensus> activeConsensusInstances = new HashMap<>();
     private final AtomicInteger currentConsensusRound = new AtomicInteger(0);
     private final List<Observer<ConsensusOutcomeDto>> consensusOutcomeObservers;
@@ -43,9 +43,9 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
         this.consensusOutcomeObservers = new ArrayList<>();
         this.myProcess = myProcess;
         this.peers = peers;
-        this.blockchain = blockchain;
         this.blockTime = blockTime;
         this.link = link;
+        this.blockchain = blockchain;
         this.totalEpochs = 0;
         this.byzantineProcesses = byzantineProcesses;
         this.keyService = keyService;
@@ -92,7 +92,6 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
                 }
 
                 if (decision != null) {
-                    blockchain.addBlock(decision);
                     cleanUpConsensus(currentRound);
                     currentConsensusRound.incrementAndGet();
                 }
@@ -141,7 +140,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
 
     private Block buildBlock() {
         List<Transaction> transactions = new ArrayList<>();
-        clientRequests.drainTo(transactions);
+        mempool.drainTo(transactions);
         return new Block (
                 blockchain.getLastBlock().getBlockHash(),
                 transactions,
@@ -154,7 +153,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
         List<Transaction> transactionsToReturn = block.getTransactions().stream().filter(
                 (transaction) -> !decidedBlock.getTransactions().contains(transaction)
         ).toList();
-        clientRequests.addAll(transactionsToReturn);
+        mempool.addAll(transactionsToReturn);
     }
 
     protected ConsensusPayload receiveConsensusMessage(int consensusId, long timeout) throws InterruptedException {
@@ -162,19 +161,15 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     }
 
     public void addClientRequest(Transaction... transaction) {
-        clientRequests.addAll(Arrays.stream(transaction).toList());
+        mempool.addAll(Arrays.stream(transaction).toList());
         //clientRequests.notifyAll();
     }
 
-    public void clearClientQueue() { clientRequests.clear(); }
+    public void clearClientQueue() { mempool.clear(); }
 
     public synchronized boolean iAmLeader() {
         int myIndex = Integer.parseInt(myProcess.getId().substring(1));
         return this.totalEpochs % (peers.length + 1) == myIndex;
-    }
-
-    public void waitForTransaction(String transactionId) throws InterruptedException {
-        // executionEngine.waitForTransaction(transactionId);
     }
 
     public synchronized void resetEpoch() { this.totalEpochs = 0; }

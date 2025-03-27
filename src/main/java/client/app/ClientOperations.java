@@ -1,5 +1,6 @@
 package client.app;
 
+import ch.qos.logback.core.net.server.Client;
 import com.google.gson.Gson;
 import common.model.*;
 import common.primitives.AuthenticatedPerfectLink;
@@ -18,6 +19,8 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
+import java.math.BigInteger;
+
 class ClientOperations implements Observer<Message> {
 
     private static final String KEYSTORE_PATH = "src/main/java/client/keys/keystore.p12";
@@ -29,6 +32,19 @@ class ClientOperations implements Observer<Message> {
     private final Map<String, CompletableFuture<ServerResponse>> requestMap;
     private final String[] serverIds = {"p0", "p1", "p2", "p3"}; // Known servers
     private final int byzantineFailures = (serverIds.length - 1) / 3;
+    private final String contractAddress;
+
+    private enum Operations {
+
+        BALANCE("70a08231"),
+        TRANSFER("23b872dd"),
+        ADD_TO_BLACKLIST("44337ea1"),
+        REMOVE_FROM_BLACKLIST("537df3b6");
+
+        private final String callDataPrefix;
+
+        Operations(String callData) { this.callDataPrefix = callData; }
+    }
 
     public ClientOperations(Process myProcess, Process[] serverProcesses)  throws Exception {
         this.myId = myProcess.getId();
@@ -42,8 +58,87 @@ class ClientOperations implements Observer<Message> {
         this.keyService = new KeyService(KEYSTORE_PATH, KEYSTORE_PASS);
         this.receivedResponses = new ConcurrentHashMap<>();
         this.requestMap = new ConcurrentHashMap<>();
+        this.contractAddress = "INSERT-CONTRACT-ADDRESS"; //TODO: insert contract address!!
         link.addObserver(this);
     }
+
+    public int balance() throws Exception {
+        String id = UUID.randomUUID().toString();
+        ClientRequest request = new ClientRequest(
+                id,
+                Command.BALANCE,
+                createTransaction(Operations.BALANCE.callDataPrefix + padHexStringTo256Bit(myId))
+        );
+        CompletableFuture<ServerResponse> future = sendToServers(request);
+        ServerResponse result = future.get();
+        if(result.success()) {
+            System.out.println("Request successful!");
+            return Integer.parseInt(result.payload());
+        } else {
+            System.out.println("Request fail.");
+            return -1;
+        }
+    }
+
+    public void transfer(String recipientAddress, int value) throws Exception {
+        String id = UUID.randomUUID().toString();
+        ClientRequest request = new ClientRequest(
+                id,
+                Command.TRANSFER,
+                createTransaction(
+                        Operations.TRANSFER.callDataPrefix +
+                                padHexStringTo256Bit(recipientAddress) +
+                                convertIntegerToHex256Bit(value)
+                )
+        );
+        CompletableFuture<ServerResponse> future = sendToServers(request);
+        ServerResponse result = future.get();
+        if(result.success()) {
+            System.out.println("Transfer success!");
+        } else {
+            System.out.println("Transfer fail.");
+        }
+    }
+
+    public void addToBlacklist(String address) throws Exception {
+        String id = UUID.randomUUID().toString();
+        ClientRequest request = new ClientRequest(
+                id,
+                Command.ADD_TO_BLACKLIST,
+                createTransaction(
+                        Operations.ADD_TO_BLACKLIST.callDataPrefix +
+                                padHexStringTo256Bit(address)
+                )
+        );
+        CompletableFuture<ServerResponse> future = sendToServers(request);
+        ServerResponse result = future.get();
+        if(result.success()) {
+            System.out.println("Address added to blacklist!");
+        } else {
+            System.out.println("Add to blacklist failed.");
+        }
+    }
+
+    public void removeFromBlacklist(String address) throws Exception {
+        String id = UUID.randomUUID().toString();
+        ClientRequest request = new ClientRequest(
+                id,
+                Command.REMOVE_FROM_BLACKLIST,
+                createTransaction(
+                        Operations.REMOVE_FROM_BLACKLIST.callDataPrefix +
+                                padHexStringTo256Bit(address)
+                )
+        );
+        CompletableFuture<ServerResponse> future = sendToServers(request);
+        ServerResponse result = future.get();
+        if(result.success()) {
+            System.out.println("Address removed from blacklist!");
+        } else {
+            System.out.println("Remove from blacklist failed.");
+        }
+    }
+
+    //TODO: remove append and read in the future
 
     public void append(String value) throws Exception {
         String id = UUID.randomUUID().toString();
@@ -98,7 +193,28 @@ class ClientOperations implements Observer<Message> {
         String id = UUID.randomUUID().toString();
         PrivateKey privateKey = keyService.loadPrivateKey("c" + myId);
         String signature = SecurityUtil.signTransaction(id, myId, value, privateKey);
-        return new Transaction(id, myId, myId, value, signature); // TODO: change to.
+        return new Transaction(id, myId, contractAddress, value, signature); //
+    }
+
+    private static String convertIntegerToHex256Bit(int number) {
+        BigInteger bigInt = BigInteger.valueOf(number);
+        return String.format("%064x", bigInt);
+    }
+
+    public static String padHexStringTo256Bit(String hexString) {
+        if (hexString.startsWith("0x")) {
+            hexString = hexString.substring(2);
+        }
+
+        int length = hexString.length();
+        int targetLength = 64;
+
+        if (length >= targetLength) {
+            return hexString.substring(0, targetLength);
+        }
+
+        return "0".repeat(targetLength - length) +
+                hexString;
     }
 
     @Override

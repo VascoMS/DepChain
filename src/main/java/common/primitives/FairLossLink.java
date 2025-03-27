@@ -147,6 +147,8 @@ public class FairLossLink implements AutoCloseable, Subject<Message> {
         }
     }
 
+    public boolean isClosed() { return processSocket.isClosed(); }
+
     @Override
     public void close() {
         running = false;
