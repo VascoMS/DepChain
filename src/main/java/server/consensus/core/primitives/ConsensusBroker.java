@@ -37,6 +37,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     private final List<Observer<ConsensusOutcomeDto>> consensusOutcomeObservers;
     private ConsensusByzantineMode byzantineMode;
     private Thread brokerThread;
+    private static final int MIN_BLOCK_SIZE = 2;
 
     public ConsensusBroker(Process myProcess, Process[] peers, AuthenticatedPerfectLink link, int byzantineProcesses, KeyService keyService, Blockchain blockchain, int blockTime) {
         this.consensusMessageQueues = new ConcurrentHashMap<>();
@@ -55,8 +56,10 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     }
 
     public synchronized void start() {
+        link.start();
         if (brokerThread == null) {
             brokerThread = new Thread(this::brokerThreadLoop);
+            brokerThread.start();
         }
     }
 
@@ -69,15 +72,20 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
                 int currentRound = currentConsensusRound.intValue();
 
                 if (activeConsensusInstances.containsKey(currentRound)) {
-                    logger.info("P{}: Consensus round {} already active", myProcess.getId(), currentRound);
+                    logger.info("{}: Consensus round {} already active", myProcess.getId(), currentRound);
                     consensus = activeConsensusInstances.get(currentRound);
-                } else {
+                } else if(mempool.size() > MIN_BLOCK_SIZE) {
                     Block proposal = buildBlock();
                     consensus = new Consensus(currentRound, proposal, this, myProcess, peers,
                             keyService, link, byzantineProcesses, totalEpochs, byzantineMode);
+                } else {
+                    logger.info("Not enough transactions in mempool to build block...");
+                    sleepUntilNextBlock(currentTime);
+                    continue;
                 }
 
-                activeConsensusInstances.put(currentRound, consensus);
+                consensusMessageQueues.putIfAbsent(currentRound, new LinkedBlockingQueue<>());
+                activeConsensusInstances.putIfAbsent(currentRound, consensus);
 
                 Future<Block> consensusFuture = executorService.submit(() ->
                         iAmLeader() ? consensus.runAsLeader() : consensus.runAsFollower()
@@ -87,7 +95,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
                 try {
                     decision = consensusFuture.get(blockTime, TimeUnit.MILLISECONDS);
                 } catch (TimeoutException e) {
-                    logger.warn("P{}: Consensus round {} timed out", myProcess.getId(), currentRound);
+                    logger.warn("{}: Consensus round {} timed out", myProcess.getId(), currentRound);
                     consensusFuture.cancel(true); // Attempt to interrupt the consensus thread
                 }
 
@@ -96,16 +104,21 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
                     currentConsensusRound.incrementAndGet();
                 }
 
-                long elapsedTime = System.currentTimeMillis() - currentTime;
-
-                if (elapsedTime < blockTime) {
-                    Thread.sleep(blockTime - elapsedTime);
-                }
-
                 notifyObservers(new ConsensusOutcomeDto(currentRound, decision));
+
+                sleepUntilNextBlock(currentTime);
+
             } catch (Exception e) {
                 logger.error("Error in server consensus broker: ", e);
             }
+        }
+    }
+
+    private void sleepUntilNextBlock(long startTime) throws InterruptedException {
+        long elapsedTime = System.currentTimeMillis() - startTime;
+
+        if (elapsedTime < blockTime) {
+            Thread.sleep(blockTime - elapsedTime);
         }
     }
 
@@ -127,7 +140,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     public void update(Message message) {
         if(message.getType() != Message.Type.CONSENSUS) return;
         ConsensusPayload cPayload = new Gson().fromJson(message.getPayload(), ConsensusPayload.class);
-        logger.info("P{}: Received {} message from P{}",
+        logger.info("{}: Received {} message from {}",
                 myProcess.getId(), cPayload.getCType(), cPayload.getSenderId());
         if(currentConsensusRound.get() != cPayload.getConsensusId()) return;
         consensusMessageQueues.putIfAbsent(cPayload.getConsensusId(), new LinkedBlockingQueue<>());
@@ -140,7 +153,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
 
     private Block buildBlock() {
         List<Transaction> transactions = new ArrayList<>();
-        mempool.drainTo(transactions);
+        mempool.drainTo(transactions, 8);
         return new Block (
                 blockchain.getLastBlock().getBlockHash(),
                 transactions,
@@ -191,7 +204,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     @Override
     public void notifyObservers(ConsensusOutcomeDto outcome) {
         for (Observer<ConsensusOutcomeDto> observer : consensusOutcomeObservers) {
-            logger.info("P{}: Notifying observer of consensus round {} with result {}",
+            logger.info("{}: Notifying observer of consensus round {} with result {}",
                     myProcess.getId(), outcome.id(), outcome.decision());
             observer.update(outcome);
         }

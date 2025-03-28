@@ -30,7 +30,7 @@ public class ConsensusPayload {
             if(cType == ConsensusType.STATE || cType == ConsensusType.COLLECTED) {
                 this.signature = SecurityUtil.signConsensusPayload(
                         senderId, consensusId, cType, content,
-                        keyService.loadPrivateKey("p" + senderId)
+                        keyService.loadPrivateKey(senderId)
                 );
             } else {
                 this.signature = null;

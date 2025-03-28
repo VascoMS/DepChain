@@ -80,14 +80,14 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
                 keys.put(peerId, key);
 
                 String cipheredKey = SecurityUtil.cipherSecretKey(key, keyService.loadPublicKey(peerId));
-                logger.info("P{}: Sending key to peer P{}: {}", myProcess.getId(), peerId, cipheredKey);
+                logger.info("{}: Sending key to peer {}: {}", myProcess.getId(), peerId, cipheredKey);
 
                 Message keyMessage = new Message(myProcess.getId(), peerId, Message.Type.KEY_EXCHANGE, cipheredKey);
 
                 send(peerId, keyMessage);
 
                 keyExchangeFutures.get(peerId).complete(true);
-                logger.info("P{}: Key exchanged with peer P{}", myProcess.getId(), peerId);
+                logger.info("{}: Key exchanged with peer {}", myProcess.getId(), peerId);
             } catch (Exception e) {
                 logger.error("Error exchanging key with peer {}: {}", peerId, e.getMessage(), e);
                 throw new RuntimeException(e);
@@ -112,7 +112,7 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
         message.setMessageId(messageCounter.getAndIncrement());
         message.setDestinationId(nodeId);
 
-        logger.info("P{}: Sending {} message {} to peer P{}: {}",
+        logger.info("{}: Sending {} message {} to peer {}: {}",
                 myProcess.getId(), message.getType(), message.getMessageId(),
                 nodeId, message.getPayload()
         );
@@ -124,7 +124,7 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
             } else {
                 signedMessage = new SignedMessage(message, keys.get(nodeId));
             }
-            logger.info("P{}: Generated integrity field for message {}: {}",
+            logger.info("{}: Generated integrity field for message {}: {}",
                     myProcess.getId(), message.getMessageId(), signedMessage.getIntegrity()
             );
 
@@ -159,7 +159,7 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
 
     private void handleKeyExchangeMessage(SignedMessage message) {
         try {
-            logger.info("P{}: Received key from P{}", myProcess.getId(), message.getSenderId());
+            logger.info("{}: Received key from {}", myProcess.getId(), message.getSenderId());
 
             SecretKeySpec secretKey =
                     SecurityUtil.decipherSecretKey(message.getPayload(), keyService.loadPrivateKey(myProcess.getId()));
@@ -167,7 +167,7 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
             keys.put(message.getSenderId(), secretKey);
             keyExchangeFutures.putIfAbsent(message.getSenderId(), new CompletableFuture<>());
             keyExchangeFutures.get(message.getSenderId()).complete(true);
-            logger.info("P{}: Key exchanged with peer P{}", myProcess.getId(), message.getSenderId());
+            logger.info("{}: Key exchanged with peer {}", myProcess.getId(), message.getSenderId());
         } catch (Exception e) {
             logger.error("Error handling key exchange: {}", e.getMessage(), e);
         }
@@ -183,11 +183,11 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
         if (!deliveredMessages.get(key).contains(message.getMessageId())) {
             deliveredMessages.get(key).add(message.getMessageId());
 
-            logger.info("P{}: Delivering message {} from P{} to application layer",
+            logger.info("{}: Delivering message {} from {} to application layer",
                     myProcess.getId(), message.getMessageId(), message.getSenderId());
             notifyObservers(message);
         } else {
-            logger.info("P{}: Message {} from P{} already delivered, discarding duplicate",
+            logger.info("{}: Message {} from {} already delivered, discarding duplicate",
                     myProcess.getId(), message.getMessageId(), message.getSenderId());
         }
     }
@@ -211,7 +211,7 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
     @Override
     public void notifyObservers(Message message) {
         for (Observer<Message> observer : observers) {
-            logger.info("P{}: Notifying observer of message from P{}",
+            logger.info("{}: Notifying observer of message from {}",
                     myProcess.getId(), message.getSenderId());
             observer.update(message);
         }
@@ -241,7 +241,7 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
             }
 
             if (!messageIsAuthentic) {
-                logger.error("P{}: Message {} from P{} failed authentication check",
+                logger.error("{}: Message {} from {} failed authentication check",
                         myProcess.getId(), signedMessage.getMessageId(), signedMessage.getSenderId());
                 return;
             }

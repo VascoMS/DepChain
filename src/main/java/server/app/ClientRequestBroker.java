@@ -58,7 +58,7 @@ public class ClientRequestBroker implements Observer<Message> {
         try {
             link.send(senderId, response);
         } catch(LinkException e) {
-            logger.error("P{}: Error in handling request from client: {}", myId, e.getMessage());
+            logger.error("{}: Error in handling request from client: {}", myId, e.getMessage());
         }
     }
     
@@ -72,7 +72,7 @@ public class ClientRequestBroker implements Observer<Message> {
             TransactionResult result = node.submitOnChainTransaction(transaction);
             return new ServerResponse(clientReqId, result.isSuccess(), result.message());
         } catch (Exception e) {
-            logger.error("P{}: Error in handling request from client: {}", myId, e.getMessage());
+            logger.error("{}: Error in handling request from client: {}", myId, e.getMessage());
             return new ServerResponse(clientReqId, false, "Server Error");
         }
     }

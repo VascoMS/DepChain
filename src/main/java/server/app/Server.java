@@ -2,6 +2,7 @@ package server.app;
 
 import common.primitives.AuthenticatedPerfectLink;
 import common.primitives.LinkType;
+import server.blockchain.util.BlockchainUtil;
 import util.KeyService;
 import util.Process;
 import util.SecurityUtil;
@@ -47,7 +48,7 @@ public class Server {
                     LinkType.SERVER_TO_CLIENT, 100, SecurityUtil.SERVER_KEYSTORE_PATH);
 
             ClientRequestBroker broker = new ClientRequestBroker(myId, clientLink, node);
-            broker.start();
+            broker.start(BlockchainUtil.GENESIS_BLOCK_PATH);
         } catch(Exception e) {
             throw new RuntimeException(e);
         }

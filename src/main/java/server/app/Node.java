@@ -51,13 +51,13 @@ public class Node implements Observer<ConsensusOutcomeDto> {
     }
 
     public TransactionResult submitOnChainTransaction(Transaction transaction) throws Exception{
-        logger.info("P{}: Queueing transaction {} for consensus.", myProcess.getId(), transaction.id());
+        logger.info("{}: Queueing transaction {} for consensus.", myProcess.getId(), transaction.id());
         consensusBroker.addClientRequest(transaction);
         try {
             return executionEngine.getTransactionFuture(transaction.id()).get();
             // consensusBroker.waitForTransaction(transaction.id());
         } catch(Exception e) {
-            logger.error("P{}: Request handling interrupted: {}", myProcess.getId(), e.getMessage(), e);
+            logger.error("{}: Request handling interrupted: {}", myProcess.getId(), e.getMessage(), e);
             throw e;
         }
     }

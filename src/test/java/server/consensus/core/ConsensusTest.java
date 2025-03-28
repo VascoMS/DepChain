@@ -7,6 +7,8 @@ import common.primitives.AuthenticatedPerfectLink;
 import common.primitives.LinkType;
 import org.junit.jupiter.api.*;
 import org.mockito.Mock;
+import org.mockito.Mockito;
+import server.blockchain.Blockchain;
 import server.blockchain.model.Block;
 import server.blockchain.BlockchainImpl;
 import server.consensus.core.model.ConsensusOutcomeDto;
@@ -42,10 +44,14 @@ public class ConsensusTest {
     private static AuthenticatedPerfectLink carlLink;
     private static AuthenticatedPerfectLink jeffLink;
 
-    private static BlockchainImpl aliceBlockchain;
-    private static BlockchainImpl bobBlockchain;
-    private static BlockchainImpl carlBlockchain;
-    private static BlockchainImpl jeffBlockchain;
+    @Mock
+    private static Blockchain aliceBlockchain;
+    @Mock
+    private static Blockchain bobBlockchain;
+    @Mock
+    private static Blockchain carlBlockchain;
+    @Mock
+    private static Blockchain jeffBlockchain;
 
     private static ConsensusBroker aliceBroker;
     private static ConsensusBroker bobBroker;
@@ -55,19 +61,9 @@ public class ConsensusTest {
     private static KeyService serverKeyService;
     private static KeyService clientKeyService;
 
-    private static final int blockTime = 6000;
+    private static final int blockTime = 3000;
 
     private static final String privateKeyPrefix = "p";
-
-    @Mock
-    public static ExecutionEngine aliceEngine;
-    @Mock
-    public static ExecutionEngine bobEngine;
-    @Mock
-    public static ExecutionEngine carlEngine;
-    @Mock
-    public static ExecutionEngine jeffEngine;
-
 
 
     @BeforeAll
@@ -105,10 +101,15 @@ public class ConsensusTest {
                 100, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
-        aliceBlockchain = new BlockchainImpl(serverKeyService, aliceEngine);
-        bobBlockchain = new BlockchainImpl(serverKeyService, bobEngine);
-        carlBlockchain = new BlockchainImpl(serverKeyService, carlEngine);
-        jeffBlockchain = new BlockchainImpl(serverKeyService, jeffEngine);
+        aliceBlockchain = Mockito.mock(Blockchain.class);
+        bobBlockchain = Mockito.mock(Blockchain.class);
+        carlBlockchain = Mockito.mock(Blockchain.class);
+        jeffBlockchain = Mockito.mock(Blockchain.class);
+
+        for(Blockchain blockchain: new Blockchain[]{aliceBlockchain, bobBlockchain, carlBlockchain, jeffBlockchain}) {
+            Mockito.when(blockchain.validateNextBlock(Mockito.any())).thenReturn(true);
+            Mockito.when(blockchain.getLastBlock()).thenReturn(new Block("", List.of(), 0));
+        }
     }
 
     @BeforeEach
@@ -186,6 +187,9 @@ public class ConsensusTest {
 
         // Act
         aliceBroker.start();
+        bobBroker.start();
+        carlBroker.start();
+        jeffBroker.start();
         latch.await();
 
         if(!failures.isEmpty()) {
@@ -242,6 +246,9 @@ public class ConsensusTest {
 
         // Act
         aliceBroker.start();
+        bobBroker.start();
+        carlBroker.start();
+        jeffBroker.start();
 
         latch.await();
 
@@ -270,10 +277,6 @@ public class ConsensusTest {
         Transaction aliceTransaction = generateTransaction("hello.");
         Transaction bobTransaction = generateTransaction("hell-o");
         Transaction carlTransaction = generateTransaction("he-llo");
-
-        aliceBroker.addClientRequest(aliceTransaction);
-        bobBroker.addClientRequest(bobTransaction);
-        carlBroker.addClientRequest(carlTransaction);
 
         aliceBroker.addClientRequest(aliceTransaction, bobTransaction);
         bobBroker.addClientRequest(bobTransaction, carlTransaction);
@@ -304,6 +307,9 @@ public class ConsensusTest {
 
         // Act
         aliceBroker.start();
+        bobBroker.start();
+        carlBroker.start();
+        jeffBroker.start();
 
         latch.await();
 
@@ -359,6 +365,9 @@ public class ConsensusTest {
 
         // Act
         aliceBroker.start();
+        bobBroker.start();
+        carlBroker.start();
+        jeffBroker.start();
 
         nullLatch.await();
 
@@ -464,6 +473,10 @@ public class ConsensusTest {
         aliceLink.send("P2", byzantineMessage);
         aliceLink.send("P3", normalMessage);
 
+        bobBroker.start();
+        carlBroker.start();
+        jeffBroker.start();
+
         latch.await();
 
         if(!failures.isEmpty()) {
@@ -483,7 +496,7 @@ public class ConsensusTest {
     private Transaction generateTransaction(String content) throws Exception {
         String transactionId = UUID.randomUUID().toString();
         String clientId = "deaddeaddeaddeaddeaddeaddeaddeaddeaddead";
-        String signature = SecurityUtil.signTransaction(transactionId, clientId, content, clientKeyService.loadPrivateKey("c" + clientId));
+        String signature = SecurityUtil.signTransaction(transactionId, clientId, content, clientKeyService.loadPrivateKey(clientId));
         return new Transaction(transactionId, clientId, clientId + 1, content, signature);
     }
 

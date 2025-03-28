@@ -33,6 +33,13 @@ public class Block {
         return SecurityUtil.generateHash(data);
     }
 
+    @Override
+    public boolean equals(Object obj) {
+        if(obj == this) return true;
+        if(!(obj instanceof Block block)) return false;
+        return block.blockHash.equals(this.blockHash);
+    }
+
     /*protected void signBlock(PrivateKey privateKey) throws Exception {
         this.signature = SecurityUtil.signString(this.blockHash, privateKey);
     }

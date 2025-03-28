@@ -48,7 +48,7 @@ public class StubbornLink implements AutoCloseable, Subject<Message>, Observer<M
             int sleepTime = baseSleepTime;
             try {
                 for (int attempts = 1; !acksList.contains(message.getMessageId()); attempts++) {
-                    logger.info("P{}: Sending message {} to node P{} attempt {}",
+                    logger.info("{}: Sending message {} to node {} attempt {}",
                             myProcess.getId(), message.getMessageId(), nodeId, attempts);
 
                     flsLink.send(nodeId, message);
@@ -60,12 +60,12 @@ public class StubbornLink implements AutoCloseable, Subject<Message>, Observer<M
                 throw new RuntimeException(e);
             }
         }
-        logger.info("P{}: Message {} sent to P{}", myProcess.getId(), message.getMessageId(), nodeId);
+        logger.info("{}: Message {} sent to {}", myProcess.getId(), message.getMessageId(), nodeId);
     }
 
     protected void handleAckMessage(Message message) {
         acksList.add(message.getMessageId());
-        logger.info("P{}: ACK {} received from node P{}",
+        logger.info("{}: ACK {} received from node {}",
                 myProcess.getId(), message.getMessageId(), message.getSenderId());
     }
 
@@ -73,7 +73,7 @@ public class StubbornLink implements AutoCloseable, Subject<Message>, Observer<M
         Message ackMessage = new Message(myProcess.getId(), senderId, Message.Type.ACK, "");
         ackMessage.setMessageId(messageId);
         flsLink.send(senderId, ackMessage);
-        logger.info("P{}: ACK {} sent to node P{}", myProcess.getId(), messageId, senderId);
+        logger.info("{}: ACK {} sent to node {}", myProcess.getId(), messageId, senderId);
     }
 
     protected Map<String, Process> getPeers() {
@@ -99,7 +99,7 @@ public class StubbornLink implements AutoCloseable, Subject<Message>, Observer<M
     @Override
     public void notifyObservers(Message message) {
         for (Observer observer : observers) {
-            logger.info("P{}: Notifying observer of message {} {}",
+            logger.info("{}: Notifying observer of message {} {}",
                     myProcess.getId(), message.getType(), message.getMessageId());
             observer.update(message);
         }
@@ -121,7 +121,7 @@ public class StubbornLink implements AutoCloseable, Subject<Message>, Observer<M
                 notifyObservers(message);
             }
         } catch (LinkException e) {
-            logger.error("P{}: Error in receiving message: {}", myProcess.getId(), e.getMessage(), e);
+            logger.error("{}: Error in receiving message: {}", myProcess.getId(), e.getMessage(), e);
         }
     }
 }

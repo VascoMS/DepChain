@@ -4,7 +4,7 @@ import util.SecurityUtil;
 
 import java.security.PublicKey;
 
-public record Transaction(String id, String from, String to, String data, String signature) {
+public record Transaction(String id, String from, String to, String data, String signature, int value) {
     public String generateHash() {
         return SecurityUtil.generateHash(new byte[][]{this.toString().getBytes()});
     }

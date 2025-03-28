@@ -80,33 +80,27 @@ public class Consensus {
 
     private void handleRead(String myId, String senderId, int consensusId) throws LinkException {
         if(senderId.equals(currentLeaderId)) {
-            logger.info("P{}: Received READ Request. Sending state to leader P{}.",
+            logger.info("{}: Received READ Request. Sending state to leader {}.",
                     myId, currentLeaderId);
             if(myState.getLatestWrite() == null){
                 WritePair writePair = new WritePair(epoch, proposal);
                 this.fetchedFromClientQueue = true;
                 myState.setLatestWrite(writePair);
-
             }
-            ConsensusPayload statePayload = new ConsensusPayload(
-                    myId,
-                    consensusId,
-                    ConsensusPayload.ConsensusType.STATE,
-                    new Gson().toJson(myState),
-                    keyService
-            );
+            ConsensusPayload statePayload = createMyState(myId, consensusId);
+
             // Send to leader
             link.send(
                     currentLeaderId,
                     new Message(myId, currentLeaderId, Message.Type.CONSENSUS, new Gson().toJson(statePayload))
             );
         } else {
-            logger.info("P{}: Received READ from non-reader P{}, ignoring.", myId, senderId);
+            logger.info("{}: Received READ from non-reader {}, ignoring.", myId, senderId);
         }
     }
 
     private void handleState(String myId, ConsensusPayload receivedPayload) throws LinkException {
-        logger.info("P{}: Received STATE Message from P{}, storing.",
+        logger.info("{}: Received STATE Message from {}, storing.",
                 myId, receivedPayload.getSenderId());
         if(!iAmLeader())
             return; // Ignore if not leader
@@ -125,7 +119,7 @@ public class Consensus {
 
     private boolean handleCollected(String myId, ConsensusPayload receivedPayload) throws Exception {
         if(receivedPayload.getSenderId().equals(currentLeaderId)) {
-            logger.info("P{}: Received COLLECTED Message from leader P{}.",
+            logger.info("{}: Received COLLECTED Message from leader {}.",
                     myId, receivedPayload.getSenderId());
 
             // Parse and verify collected state signatures
@@ -152,29 +146,29 @@ public class Consensus {
             }
         }
         else {
-            logger.info("P{}: Received COLLECTED message from non-leader P{}, ignoring.", myId, receivedPayload.getSenderId());
+            logger.info("{}: Received COLLECTED message from non-leader {}, ignoring.", myId, receivedPayload.getSenderId());
         }
         return true;
     }
 
     private boolean handleWrite(String myId, ConsensusPayload receivedPayload) throws LinkException {
-        logger.info("P{}: Received WRITE Message from P{}.",
+        logger.info("{}: Received WRITE Message from {}.",
                 myId, receivedPayload.getSenderId());
         WritePair collectedWrite = new Gson().fromJson(
                 receivedPayload.getContent(),
                 WritePair.class
         );
         peersWrites.putIfAbsent(receivedPayload.getSenderId(), collectedWrite);
-        logger.info("P{}: Received write number {}.", myId, peersWrites.size());
+        logger.info("{}: Received write number {}.", myId, peersWrites.size());
         if (peersWrites.values().stream()
                         .filter(m -> m.equals(collectedWrite))
                         .count() > 2L * byzantineProcesses) {
             // Validate observed write
             if(!broker.validateBlock(collectedWrite.value())) {
-                logger.error("P{}: Invalid block.", myId);
+                logger.error("{}: Invalid block.", myId);
                 return false;
             }
-            logger.info("P{}: Sending ACCEPT message, value {}", myId, collectedWrite.value());
+            logger.info("{}: Sending ACCEPT message, value {}", myId, collectedWrite.value());
             // Return request to queue if it had been fetched and was not chosen in the server.consensus round
             if(fetchedFromClientQueue && myState.getLatestWrite().value() != null && !myState.getLatestWrite().equals(collectedWrite)) {
                 broker.returnTransactions(proposal, collectedWrite.value());
@@ -192,26 +186,26 @@ public class Consensus {
             return true;
         }
         if (peersWrites.size() == peers.length + 1) {
-            logger.info("P{}: Could not reach server.consensus while waiting for WRITE, abort.", myId);
+            logger.info("{}: Could not reach server.consensus while waiting for WRITE, abort.", myId);
             return false;
         }
         return true;
     }
 
     private boolean handleAccept(String myId, ConsensusPayload receivedPayload) {
-        logger.info("P{}: Received ACCEPT Message from P{}.",
+        logger.info("{}: Received ACCEPT Message from {}.",
                 myId, receivedPayload.getSenderId());
         peersAccepts.putIfAbsent(receivedPayload.getSenderId(), receivedPayload.getContent());
-        logger.info("P{}: Received accept number {}.", myId, peersAccepts.size());
+        logger.info("{}: Received accept number {}.", myId, peersAccepts.size());
         if(peersAccepts.values().stream()
                 .filter(m -> m.equals(receivedPayload.getContent()))
                 .count() > 2L * byzantineProcesses) {
-            logger.info("P{}: Consensus reached. Decided value: {}", myId, receivedPayload.getContent());
+            logger.info("{}: Consensus reached. Decided value: {}", myId, receivedPayload.getContent());
             decision = new Gson().fromJson(receivedPayload.getContent(), Block.class);
             return true;
         }
         if (peersAccepts.size() == peers.length + 1) {
-            logger.info("P{}: Could not reach server.consensus while waiting for ACCEPT, abort.", myId);
+            logger.info("{}: Could not reach server.consensus while waiting for ACCEPT, abort.", myId);
             return false;
         }
         return false;
@@ -222,19 +216,19 @@ public class Consensus {
         boolean delivered = false;
         // Loop to keep receiving messages until delivery can be done.
         while(!delivered) {
-            logger.info("P{}: Waiting for message for server.consensus {}...", myProcess.getId(), consensusId);
+            logger.info("{}: Waiting for message for server.consensus {}...", myProcess.getId(), consensusId);
             try {
                 ConsensusPayload payload = broker.receiveConsensusMessage(consensusId, waitingForMessageTimeout);
                 // When payload returns null, timeout reached so abort.
                 if (payload == null) {
-                    logger.info("P{}: Consensus aborted due to timeout.", myId);
+                    logger.info("{}: Consensus aborted due to timeout.", myId);
                     waitingForMessageTimeout *= 2;
                     return null;
                 }
-                logger.info("P{}: Collecting Received message {}: {}",
+                logger.info("{}: Collecting Received message {}: {}",
                         myProcess.getId(), payload.getCType(), payload.getContent());
                 if(byzantineMode == ConsensusByzantineMode.DROP_ALL) {
-                    logger.info("P{}: Byzantine - ignore received message.", myId);
+                    logger.info("{}: Byzantine - ignore received message.", myId);
                     if(payload.getCType() == ConsensusPayload.ConsensusType.ACCEPT) return null; else continue;
                 }
                 switch (payload.getCType()) {
@@ -255,21 +249,21 @@ public class Consensus {
                     case ACCEPT -> delivered = handleAccept(myId, payload);
                 }
             } catch(InterruptedException e) {
-                logger.error("P{}: Message collection interrupted. {}", myId, e.getMessage());
+                logger.error("{}: Message collection interrupted. {}", myId, e.getMessage());
                 return null;
             }
         }
         return decision;
     }
 
-
     public Block runAsLeader() throws Exception {
         String myId = myProcess.getId();
         ConsensusPayload cPayload = new ConsensusPayload(myId, roundId, READ, null, keyService);
         String payloadString = new Gson().toJson(cPayload);
-        logger.info("P{}: Starting server.consensus", myProcess.getId());
+        logger.info("{}: Starting server.consensus as leader", myProcess.getId());
         // Send the message to myself
-        link.send(myId, new Message(myId, myId, Message.Type.CONSENSUS, payloadString));
+        // link.send(myId, new Message(myId, myId, Message.Type.CONSENSUS, payloadString));
+        peersStates.putIfAbsent(myId, createMyState(myId, roundId));
         // Send the message to everybody else
         for (Process process : peers) {
             String processId = process.getId();
@@ -279,7 +273,23 @@ public class Consensus {
     }
 
     public Block runAsFollower() throws Exception {
+        logger.info("{}: Starting server.consensus as follower", myProcess.getId());
         return collect(roundId);
+    }
+
+    private ConsensusPayload createMyState(String myId, int consensusId) {
+        if(myState.getLatestWrite() == null) {
+            WritePair writePair = new WritePair(epoch, proposal);
+            this.fetchedFromClientQueue = true;
+            myState.setLatestWrite(writePair);
+        }
+        return new ConsensusPayload(
+                myId,
+                consensusId,
+                ConsensusPayload.ConsensusType.STATE,
+                new Gson().toJson(myState),
+                keyService
+        );
     }
 
     private HashMap<String, ConsensusPayload> parseCollectedStates(ConsensusPayload receivedPayload) {
@@ -296,7 +306,7 @@ public class Consensus {
             }
             return true;
         } catch (Exception e) {
-            logger.error("P{}: Exception during signature verification: {}", myId, e.getMessage());
+            logger.error("{}: Exception during signature verification: {}", myId, e.getMessage());
             throw new RuntimeException(e);
         }
     }
@@ -308,11 +318,11 @@ public class Consensus {
                 processState.getCType(),
                 processState.getContent(),
                 processState.getSignature(),
-                keyService.loadPublicKey("p" + processState.getSenderId())
+                keyService.loadPublicKey(processState.getSenderId())
         );
 
         if (!isValid) {
-            logger.info("P{}: Invalid signature from P{}, aborting.",
+            logger.info("{}: Invalid signature from {}, aborting.",
                     myId, processState.getSenderId());
         }
 
@@ -332,7 +342,7 @@ public class Consensus {
     }
 
     private void sendWriteMessage(String myId, int consensusId, Block writeValue, int epoch) throws LinkException {
-        logger.info("P{}: Sending WRITE message, timestamp {}, value {}", myId, epoch, writeValue);
+        logger.info("{}: Sending WRITE message, timestamp {}, value {}", myId, epoch, writeValue);
 
         WritePair newWrite = new WritePair(epoch, writeValue);
         ConsensusPayload writePayload = new ConsensusPayload(
@@ -358,16 +368,16 @@ public class Consensus {
                         .filter(writeSetList -> writeSetList.stream()
                                 .anyMatch(writePair -> writePair.value().equals(mostRecentWritePair.value())))
                         .count() > byzantineProcesses) {
-            logger.info("P{}: Accepted value: {}.", myId, mostRecentWritePair.value());
+            logger.info("{}: Accepted value: {}.", myId, mostRecentWritePair.value());
             return mostRecentWritePair.value();
         } else {
-            logger.info("P{}: Value not present in byzantine quorum writesets, following leader", myId);
+            logger.info("{}: Value not present in byzantine quorum writesets, following leader", myId);
             return leaderValue;
         }
     }
 
     private void sendConsensusMessage(String myId, ConsensusPayload collectedPayload) throws LinkException {
-        logger.info("P{}: Sending {} message: {}", myId, collectedPayload.getCType(), collectedPayload.getContent());
+        logger.info("{}: Sending {} message: {}", myId, collectedPayload.getCType(), collectedPayload.getContent());
         String payloadToSend = new Gson().toJson(collectedPayload);
         // Sending accept to myself
         link.send(
@@ -385,7 +395,7 @@ public class Consensus {
     }
 
     public String getRoundRobinLeader(int epoch, int numNodes){
-        return "P" + ((epoch + epochOffset) % numNodes);
+        return "p" + ((epoch + epochOffset) % numNodes);
     }
 
     public boolean iAmLeader() {

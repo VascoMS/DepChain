@@ -1,10 +1,10 @@
 package client.app;
 
-import ch.qos.logback.core.net.server.Client;
 import com.google.gson.Gson;
 import common.model.*;
 import common.primitives.AuthenticatedPerfectLink;
 import common.primitives.LinkType;
+import common.util.Addresses;
 import server.consensus.exception.LinkException;
 import util.KeyService;
 import util.Observer;
@@ -20,6 +20,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 import java.math.BigInteger;
+import java.util.concurrent.TimeUnit;
 
 class ClientOperations implements Observer<Message> {
 
@@ -58,7 +59,7 @@ class ClientOperations implements Observer<Message> {
         this.keyService = new KeyService(KEYSTORE_PATH, KEYSTORE_PASS);
         this.receivedResponses = new ConcurrentHashMap<>();
         this.requestMap = new ConcurrentHashMap<>();
-        this.contractAddress = "INSERT-CONTRACT-ADDRESS"; //TODO: insert contract address!!
+        this.contractAddress = Addresses.ISTCOIN_ADDRESS;
         link.addObserver(this);
     }
 
@@ -67,7 +68,7 @@ class ClientOperations implements Observer<Message> {
         ClientRequest request = new ClientRequest(
                 id,
                 Command.BALANCE,
-                createTransaction(Operations.BALANCE.callDataPrefix + padHexStringTo256Bit(myId))
+                createTransaction(Operations.BALANCE.callDataPrefix + padHexStringTo256Bit(myId), 0)
         );
         CompletableFuture<ServerResponse> future = sendToServers(request);
         ServerResponse result = future.get();
@@ -88,7 +89,7 @@ class ClientOperations implements Observer<Message> {
                 createTransaction(
                         Operations.TRANSFER.callDataPrefix +
                                 padHexStringTo256Bit(recipientAddress) +
-                                convertIntegerToHex256Bit(value)
+                                convertIntegerToHex256Bit(value),
                 )
         );
         CompletableFuture<ServerResponse> future = sendToServers(request);
@@ -107,7 +108,8 @@ class ClientOperations implements Observer<Message> {
                 Command.ADD_TO_BLACKLIST,
                 createTransaction(
                         Operations.ADD_TO_BLACKLIST.callDataPrefix +
-                                padHexStringTo256Bit(address)
+                                padHexStringTo256Bit(address),
+                        0
                 )
         );
         CompletableFuture<ServerResponse> future = sendToServers(request);
@@ -126,7 +128,8 @@ class ClientOperations implements Observer<Message> {
                 Command.REMOVE_FROM_BLACKLIST,
                 createTransaction(
                         Operations.REMOVE_FROM_BLACKLIST.callDataPrefix +
-                                padHexStringTo256Bit(address)
+                                padHexStringTo256Bit(address),
+                        0
                 )
         );
         CompletableFuture<ServerResponse> future = sendToServers(request);
@@ -138,44 +141,12 @@ class ClientOperations implements Observer<Message> {
         }
     }
 
-    //TODO: remove append and read in the future
+    private CompletableFuture<ServerResponse> sendToServers(ClientRequest clientRequest) throws LinkException {
 
-    public void append(String value) throws Exception {
-        String id = UUID.randomUUID().toString();
-        ClientRequest request = new ClientRequest(id, Command.APPEND, createTransaction(value));
-        System.out.println("Appending value: " + value);
-        CompletableFuture<ServerResponse> future = sendToServers(request);
-        ServerResponse result = future.get();
-        if(result.success()) {
-            System.out.println("Append successful!");
-        } else {
-            System.out.println("Append failed.");
-        }
-    }
-
-    public String read() throws Exception {
-        String id = UUID.randomUUID().toString();
-        ClientRequest request = new ClientRequest(id, Command.READ, null);
-        System.out.println("Reading from servers...");
-        try {
-            CompletableFuture<ServerResponse> future = sendToServers(request);
-            ServerResponse result = future.get();
-            if(result != null && result.success()) {
-                System.out.println("Read successful!");
-                return result.payload();
-            } else {
-                System.out.println("Read failed.");
-                return null;
-            }
-        } catch (LinkException e) {
-            System.out.println("Error in sending request to servers: " + e.getMessage());
-            e.printStackTrace();
-            return null;
-        }
-    }
-
-    private CompletableFuture<ServerResponse> sendToServers(ClientRequest clientRequest) throws LinkException{
-        CompletableFuture<ServerResponse> future = new CompletableFuture<>();
+        CompletableFuture<ServerResponse> future = new CompletableFuture<ServerResponse>()
+                .completeOnTimeout(ServerResponse.timeout(
+                        clientRequest.id()), 1000L, TimeUnit.MILLISECONDS
+                );
         requestMap.put(clientRequest.id(), future);
         receivedResponses.put(clientRequest.id(), new ArrayList<>());
         for (String serverId : serverIds) {
@@ -189,11 +160,11 @@ class ClientOperations implements Observer<Message> {
         return future;
     }
 
-    private Transaction createTransaction(String value) throws Exception {
+    private Transaction createTransaction(String calldata, int value) throws Exception {
         String id = UUID.randomUUID().toString();
-        PrivateKey privateKey = keyService.loadPrivateKey("c" + myId);
-        String signature = SecurityUtil.signTransaction(id, myId, value, privateKey);
-        return new Transaction(id, myId, contractAddress, value, signature); //
+        PrivateKey privateKey = keyService.loadPrivateKey(myId);
+        String signature = SecurityUtil.signTransaction(id, myId, calldata, privateKey);
+        return new Transaction(id, myId, contractAddress, calldata, signature, value); //
     }
 
     private static String convertIntegerToHex256Bit(int number) {

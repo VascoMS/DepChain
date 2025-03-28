@@ -7,6 +7,7 @@ import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.units.bigints.UInt256;
 import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.datatypes.Wei;
+import org.hyperledger.besu.evm.EvmSpecVersion;
 import org.hyperledger.besu.evm.account.Account;
 import org.hyperledger.besu.evm.account.MutableAccount;
 import org.hyperledger.besu.evm.fluent.EVMExecutor;
@@ -33,11 +34,6 @@ public class ExecutionEngineImpl implements ExecutionEngine {
     private final ByteArrayOutputStream executionOutputStream;
 
     private final ConcurrentHashMap<String, CompletableFuture<TransactionResult>> transactionFutures;
-
-    public static String ALICE_ADDRESS = "deaddeaddeaddeaddeaddeaddeaddeaddeaddead";
-    public static String BOB_ADDRESS = "beefbeefbeefbeefbeefbeefbeefbeefbeefbeef";
-    public static String BLACKLIST_ADDRESS = "1234567891234567891234567891234567891234";
-    public static String ISTCOIN_ADDRESS = "9876543219876543219876543219876543219876";
 
     private final Set<String> readFunctionIdentifiers;
 
@@ -161,6 +157,7 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         evmExecutor.contract(receiver);
         evmExecutor.messageFrameType(MessageFrame.Type.MESSAGE_CALL);
         evmExecutor.callData(callData);
+        evmExecutor.ethValue(Wei.fromEth(transaction.value()));
         evmExecutor.execute();
 
         String error = getError(executionOutputStream);

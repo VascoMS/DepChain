@@ -40,7 +40,7 @@ public class FairLossLink implements AutoCloseable, Subject<Message> {
         this.observers = new ArrayList<>();
 
         try {
-            logger.info("P{}: Creating socket on {}:{}", myProcess.getId(), myProcess.getHost(), myProcess.getPort());
+            logger.info("{}: Creating socket on {}:{}", myProcess.getId(), myProcess.getHost(), myProcess.getPort());
             this.processSocket = new DatagramSocket(myProcess.getPort(), InetAddress.getByName(myProcess.getHost()));
         } catch (Exception e) {
             throw new LinkException(ErrorMessages.LinkCreationError, e);
@@ -79,7 +79,7 @@ public class FairLossLink implements AutoCloseable, Subject<Message> {
 
         if (nodeId.equals(myProcess.getId()) && type == LinkType.SERVER_TO_SERVER) {
             messageQueue.add(message);
-            logger.info("P{}: Message added to local queue", myProcess.getId());
+            logger.info("{}: Message added to local queue", myProcess.getId());
             return;
         }
 
@@ -92,7 +92,7 @@ public class FairLossLink implements AutoCloseable, Subject<Message> {
             DatagramPacket packet = new DatagramPacket(bytes, bytes.length, nodeHost, nodePort);
             processSocket.send(packet);
 
-            logger.info("P{}: Message sent to node P{} at {}:{}",
+            logger.info("{}: Message sent to node {} at {}:{}",
                     myProcess.getId(), nodeId, nodeHost.getHostAddress(), nodePort);
         } catch (Exception e) {
             logger.error("Error sending message: {}", e.getMessage(), e);
@@ -108,7 +108,7 @@ public class FairLossLink implements AutoCloseable, Subject<Message> {
     }
 
     private void socketReceiver() {
-        logger.info("P{}: Started listening on socket.", myProcess.getId());
+        logger.info("{}: Started listening on socket.", myProcess.getId());
         while (running && !processSocket.isClosed()) {
             try {
                 DatagramPacket packet = listenOnProcessSocket();
@@ -128,11 +128,11 @@ public class FairLossLink implements AutoCloseable, Subject<Message> {
         while(running) {
             try {
                 Message message = messageQueue.take();
-                logger.info("P{}: Message received from node P{}", myProcess.getId(), message.getSenderId());
+                logger.info("{}: Message received from node {}", myProcess.getId(), message.getSenderId());
                 notifyObservers(message);
             } catch (Exception e) {
                 if(running) {
-                    logger.error("P{}: Error in receiving messages: {}", myProcess.getId(), e.getMessage(), e);
+                    logger.error("{}: Error in receiving messages: {}", myProcess.getId(), e.getMessage(), e);
                 }
             }
         }
