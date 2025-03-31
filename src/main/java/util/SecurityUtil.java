@@ -185,7 +185,7 @@ public class SecurityUtil {
         return verifySignature(verifier, dataToVerify, signature);
     }
 
-    public static boolean verifySignature(Transaction transaction, PublicKey publicKey) throws Exception {
+    public static boolean   verifySignature(Transaction transaction, PublicKey publicKey) throws Exception {
         logger.info("Verifying transaction signature...");
         Signature verifier = initVerifier(publicKey);
 

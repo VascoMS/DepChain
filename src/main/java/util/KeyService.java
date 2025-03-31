@@ -7,6 +7,7 @@ import javax.crypto.KeyGenerator;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.FileInputStream;
 import java.security.*;
+import java.security.cert.Certificate;
 
 
 public class KeyService {
@@ -26,12 +27,13 @@ public class KeyService {
 
     public PrivateKey loadPrivateKey(String alias) throws UnrecoverableKeyException, KeyStoreException, NoSuchAlgorithmException {
         logger.info("Loading private key for alias: " + alias);
-        return (PrivateKey)keystore.getKey(alias, password.toCharArray());
+        return (PrivateKey) keystore.getKey(alias, password.toCharArray());
     }
 
     public PublicKey loadPublicKey(String alias) throws KeyStoreException {
         logger.info("Loading public key for alias: " + alias);
-        return keystore.getCertificate(alias).getPublicKey();
+        Certificate certificate = keystore.getCertificate(alias);
+        return certificate != null ? certificate.getPublicKey() : null;
     }
 
     public SecretKeySpec generateSecretKey() throws NoSuchAlgorithmException  {

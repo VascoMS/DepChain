@@ -17,6 +17,7 @@ import org.hyperledger.besu.evm.tracing.StandardJsonTracer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.evm.model.TransactionResult;
+import util.SecurityUtil;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -52,9 +53,8 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         evmExecutor.commitWorldState();
     }
 
-    public void initState(String state) {
-        JsonObject json = new Gson().fromJson(state, JsonObject.class);
-        parseAndApplyState(json);
+    public void initState(JsonObject state) {
+        parseAndApplyState(state);
     }
 
     private void parseAndApplyState(JsonObject json) {

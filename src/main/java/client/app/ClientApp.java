@@ -10,7 +10,7 @@ public class ClientApp {
     public static void main(String[] args) {
         if(args.length < 3) {
             System.err.println("Argument(s) missing!");
-            System.err.printf("Usage: java %s <client-port> <id> <server-base-port>%n", ClientApp.class.getName());
+            System.err.printf("Usage: java %s <client-port> <address> <server-base-port>%n", ClientApp.class.getName());
             return;
         }
 

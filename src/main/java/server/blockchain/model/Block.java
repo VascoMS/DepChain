@@ -43,8 +43,8 @@ public class Block {
         for (Transaction transaction : transactions) {
             try {
                 String publicKeyId = transaction.from();
-                if (!transaction.verifySignature(keyService.loadPublicKey(publicKeyId))) {
-                    logger.warn("Invalid signature for transaction from {}", transaction.from());
+                if (!transaction.isValid(keyService.loadPublicKey(publicKeyId))) {
+                    logger.warn("Invalid transaction from {}", transaction.from());
                     return false;
                 }
             } catch (Exception e) {

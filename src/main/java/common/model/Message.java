@@ -17,7 +17,7 @@ public class Message implements Serializable {
     private final String payload;
 
     public enum Type {
-        ACK, UNICAST, CONSENSUS, REQUEST, KEY_EXCHANGE
+        ACK, UNICAST, CONSENSUS, REQUEST_RESPONSE, KEY_EXCHANGE
     }
 
     public Message(String senderId, String destinationId, Type type, String payload) {

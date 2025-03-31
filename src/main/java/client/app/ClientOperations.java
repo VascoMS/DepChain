@@ -173,7 +173,7 @@ class ClientOperations implements Observer<Message> {
             Message message = new Message(
                     myId,
                     serverId,
-                    Message.Type.REQUEST,
+                    Message.Type.REQUEST_RESPONSE,
                     new Gson().toJson(clientRequest));
             link.send(serverId, message);
         }
@@ -210,7 +210,7 @@ class ClientOperations implements Observer<Message> {
 
     @Override
     public void update(Message message) {
-        if(message.getType() != Message.Type.REQUEST) return;
+        if(message.getType() != Message.Type.REQUEST_RESPONSE) return;
         ServerResponse response = new Gson().fromJson(message.getPayload(), ServerResponse.class);
         CompletableFuture<ServerResponse> future = requestMap.get(response.requestId());
         if(future == null) {

@@ -27,6 +27,7 @@ public class Node implements Observer<ConsensusOutcomeDto> {
     private final ExecutionEngine executionEngine;
     private final AuthenticatedPerfectLink processLink;
     public static final int MIN_BLOCK_SIZE = 2;
+    public static final String GENESIS_BLOCK_PATH = "src/main/java/server/blockchain/resources/genesis.json";
 
     public Node(int basePort, String myId, Process[] processes, int blockTime, KeyService keyService) throws Exception {
         this.myProcess = new Process(myId, "localhost", basePort + Integer.parseInt(myId.substring(1)));
@@ -43,8 +44,8 @@ public class Node implements Observer<ConsensusOutcomeDto> {
                 keyService, blockchain, blockTime, MIN_BLOCK_SIZE);
     }
 
-    public void bootstrap(String genesisFilePath) {
-        blockchain.bootstrap(genesisFilePath);
+    public void bootstrap(String genesisBlockPath) {
+        blockchain.bootstrap(genesisBlockPath);
     }
 
     public TransactionResult submitOffChainTransaction(Transaction transaction) {
@@ -66,17 +67,12 @@ public class Node implements Observer<ConsensusOutcomeDto> {
         return (numberOfProcesses - 1) / 3;
     }
 
-    private void start() {
-        // Start network links
+
+    public void start() {
+        bootstrap(GENESIS_BLOCK_PATH);
         System.out.println("Node " + myProcess.getId() + " started.");
         consensusBroker.addObserver(this);
         processLink.start();
-        processLink.waitForTermination();
-    }
-
-    public void start(String genesisFilePath) {
-        bootstrap(genesisFilePath);
-        start();
     }
 
     // TODO: Maybe add catch up start if we have time

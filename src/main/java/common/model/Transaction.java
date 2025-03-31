@@ -8,10 +8,10 @@ public record Transaction(String id, String from, String to, String data, int va
     public String generateHash() {
         return SecurityUtil.generateHash(new byte[][]{this.toString().getBytes()});
     }
-    public boolean verifySignature(PublicKey publicKey) throws Exception {
+    private boolean verifySignature(PublicKey publicKey) throws Exception {
         return SecurityUtil.verifySignature(this, publicKey);
     }
-    public boolean isValid() {
-        return data == null || data.length() >= 8;
+    public boolean isValid(PublicKey publicKey) throws Exception {
+        return (data == null || data.length() >= 8) && verifySignature(publicKey);
     }
 }
