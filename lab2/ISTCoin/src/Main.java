@@ -121,9 +121,19 @@ public class Main {
         executor.callData(Bytes.fromHexString("a9059cbb" + bobPaddedAddress + convertIntegerToHex256Bit(1000)));
         executor.execute();
 
+        // Trying to send more than balance
         executor.sender(bobAddress);
         executor.callData(Bytes.fromHexString("a9059cbb" + alicePaddedAddress + convertIntegerToHex256Bit(1001)));
         executor.execute();
+
+        var newExec = EVMExecutor.evm(EvmSpecVersion.CANCUN);
+        newExec.tracer(creationTracer);
+        newExec.sender(aliceAddress);
+        newExec.receiver(bobAddress);
+        newExec.ethValue(Wei.fromEth(10));
+        newExec.worldUpdater(simpleWorld.updater());
+        newExec.commitWorldState();
+        newExec.execute();
 
         //int totalSupplyOutput = extractIntegerFromReturnData(creationOutputStream);
         //System.out.println("Total Supply: "+totalSupplyOutput);

@@ -26,6 +26,7 @@ public class Node implements Observer<ConsensusOutcomeDto> {
     private final ConsensusBroker consensusBroker;
     private final ExecutionEngine executionEngine;
     private final AuthenticatedPerfectLink processLink;
+    public static final int MIN_BLOCK_SIZE = 2;
 
     public Node(int basePort, String myId, Process[] processes, int blockTime, KeyService keyService) throws Exception {
         this.myProcess = new Process(myId, "localhost", basePort + Integer.parseInt(myId.substring(1)));
@@ -35,11 +36,11 @@ public class Node implements Observer<ConsensusOutcomeDto> {
         this.processLink = new AuthenticatedPerfectLink(
                 myProcess, peers, LinkType.SERVER_TO_SERVER, 100, SecurityUtil.SERVER_KEYSTORE_PATH);
         // Blockchain Module
-        blockchain = new BlockchainImpl(keyService, executionEngine);
+        blockchain = new BlockchainImpl(keyService, executionEngine, MIN_BLOCK_SIZE);
         // Consensus Module
         this.consensusBroker = new ConsensusBroker(
                 myProcess, peers, processLink, calculateByzantineFailures(peers.length + 1),
-                keyService, blockchain, blockTime);
+                keyService, blockchain, blockTime, MIN_BLOCK_SIZE);
     }
 
     public void bootstrap(String genesisFilePath) {
@@ -55,7 +56,6 @@ public class Node implements Observer<ConsensusOutcomeDto> {
         consensusBroker.addClientRequest(transaction);
         try {
             return executionEngine.getTransactionFuture(transaction.id()).get();
-            // consensusBroker.waitForTransaction(transaction.id());
         } catch(Exception e) {
             logger.error("{}: Request handling interrupted: {}", myProcess.getId(), e.getMessage(), e);
             throw e;

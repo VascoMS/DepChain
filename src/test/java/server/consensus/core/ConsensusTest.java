@@ -8,6 +8,7 @@ import common.primitives.LinkType;
 import org.junit.jupiter.api.*;
 import org.mockito.Mock;
 import org.mockito.Mockito;
+import server.app.Node;
 import server.blockchain.Blockchain;
 import server.blockchain.model.Block;
 import server.blockchain.BlockchainImpl;
@@ -121,7 +122,8 @@ public class ConsensusTest {
                 1,
                 serverKeyService,
                 aliceBlockchain,
-                blockTime
+                blockTime,
+                2
         );
 
         bobBroker = new ConsensusBroker(
@@ -131,7 +133,8 @@ public class ConsensusTest {
                 1,
                 serverKeyService,
                 bobBlockchain,
-                blockTime
+                blockTime,
+                2
         );
 
         carlBroker = new ConsensusBroker(
@@ -141,7 +144,8 @@ public class ConsensusTest {
                 1,
                 serverKeyService,
                 carlBlockchain,
-                blockTime
+                blockTime,
+                2
         );
 
         jeffBroker = new ConsensusBroker(
@@ -151,7 +155,8 @@ public class ConsensusTest {
                 1,
                 serverKeyService,
                 jeffBlockchain,
-                blockTime
+                blockTime,
+                2
         );
     }
 
@@ -164,11 +169,17 @@ public class ConsensusTest {
         CountDownLatch latch = new CountDownLatch(4);
 
         Transaction transaction = generateTransaction("hello.");
-        aliceBroker.addClientRequest(transaction);
+        Transaction transaction2 = generateTransaction("hello2.");
+
+        aliceBroker.addClientRequest(transaction, transaction2);
+        bobBroker.addClientRequest(transaction, transaction2);
+        carlBroker.addClientRequest(transaction, transaction2);
+        jeffBroker.addClientRequest(transaction, transaction2);
 
         Observer<ConsensusOutcomeDto> tester = outcome -> {
             try {
                 assertTrue(outcome.decision().getTransactions().contains(transaction));
+                assertTrue(outcome.decision().getTransactions().contains(transaction2));
             } catch (Throwable e) {
                 if (e instanceof AssertionError) {
                     failures.add((AssertionError) e);
@@ -221,6 +232,7 @@ public class ConsensusTest {
         aliceBroker.addClientRequest(aliceTransaction, bobTransaction);
         bobBroker.addClientRequest(bobTransaction, carlTransaction);
         carlBroker.addClientRequest(carlTransaction, aliceTransaction);
+        jeffBroker.addClientRequest(aliceTransaction, carlTransaction);
 
         Observer<ConsensusOutcomeDto> tester = outcome -> {
             try {
@@ -281,6 +293,7 @@ public class ConsensusTest {
         aliceBroker.addClientRequest(aliceTransaction, bobTransaction);
         bobBroker.addClientRequest(bobTransaction, carlTransaction);
         carlBroker.addClientRequest(carlTransaction, aliceTransaction);
+        jeffBroker.addClientRequest(aliceTransaction, carlTransaction);
 
         Observer<ConsensusOutcomeDto> tester = outcome -> {
             try {
@@ -337,6 +350,7 @@ public class ConsensusTest {
         Transaction aliceTransaction = generateTransaction("hello.");
         Transaction bobTransaction = generateTransaction("hell-o");
         Transaction carlTransaction = generateTransaction("he-llo");
+        jeffBroker.addClientRequest(aliceTransaction, carlTransaction);
 
         aliceBroker.addClientRequest(aliceTransaction);
         bobBroker.addClientRequest(bobTransaction);
@@ -496,8 +510,8 @@ public class ConsensusTest {
     private Transaction generateTransaction(String content) throws Exception {
         String transactionId = UUID.randomUUID().toString();
         String clientId = "deaddeaddeaddeaddeaddeaddeaddeaddeaddead";
-        String signature = SecurityUtil.signTransaction(transactionId, clientId, content, clientKeyService.loadPrivateKey(clientId));
-        return new Transaction(transactionId, clientId, clientId + 1, content, signature);
+        String signature = SecurityUtil.signTransaction(transactionId, clientId, content, 0, clientKeyService.loadPrivateKey(clientId));
+        return new Transaction(transactionId, clientId, clientId + 1, content, 0, signature);
     }
 
     @AfterEach

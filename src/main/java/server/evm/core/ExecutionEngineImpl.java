@@ -20,6 +20,7 @@ import server.evm.model.TransactionResult;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.math.BigInteger;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -133,19 +134,32 @@ public class ExecutionEngineImpl implements ExecutionEngine {
     }
 
     public TransactionResult performOffChainOperation(Transaction transaction){
-        String callDataPrefix = transaction.data().substring(0, 8);
-        if(readFunctionIdentifiers.contains(callDataPrefix)) {
-            return null; //TODO
-
+        String callData = transaction.data();
+        if(callData == null) { // Null calldata corresponds to reading the DEPCOIN balance
+            String address = transaction.from();
+            int balance = readNativeCurrencyBalance(address);
+            return TransactionResult.success("DEPCOIN Balance for " + address + " : " + balance);
         }
-        return TransactionResult.success(); //TODO: Add read result
+        if(!readFunctionIdentifiers.contains(callData.substring(0, 8))) {
+            return TransactionResult.fail("Invalid read function identifier");
+        }
+        return executeTransaction(transaction);
+    }
+
+    private int readNativeCurrencyBalance(String address) {
+        Account account = state.getAccount(Address.fromHexString(address));
+        return account != null
+                ? BigInteger.valueOf(account.getBalance().intValue()).divide(BigInteger.TEN.pow(18)).intValue()
+                : 0;
     }
 
     private TransactionResult executeTransaction(Transaction transaction) {
         logger.info("Executing transaction: {}", transaction);
         Address sender = Address.fromHexString(transaction.from());
         Address receiver = Address.fromHexString(transaction.to());
-        Bytes callData = Bytes.fromHexString(transaction.data());
+        Bytes callData = transaction.data() != null && !transaction.data().isEmpty()
+                ? Bytes.fromHexString(transaction.data())
+                : null;
         Account contractAccount = state.getAccount(receiver);
         if (contractAccount == null) {
             return TransactionResult.fail("Contract account not found");
@@ -154,9 +168,10 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         evmExecutor.sender(sender);
         evmExecutor.receiver(receiver);
         evmExecutor.code(code);
-        evmExecutor.contract(receiver);
         evmExecutor.messageFrameType(MessageFrame.Type.MESSAGE_CALL);
-        evmExecutor.callData(callData);
+        if(callData != null) {
+            evmExecutor.callData(callData);
+        }
         evmExecutor.ethValue(Wei.fromEth(transaction.value()));
         evmExecutor.execute();
 
@@ -166,13 +181,14 @@ public class ExecutionEngineImpl implements ExecutionEngine {
             String errorMessage = parseError(error);
             return TransactionResult.fail(errorMessage);
         }
-        return TransactionResult.success();
+
+        return TransactionResult.success(parseEvmOutput(executionOutputStream));
     }
 
     public static String getError(ByteArrayOutputStream byteArrayOutputStream) {
         String[] lines = byteArrayOutputStream.toString().split("\\r?\\n");
         JsonObject jsonObject = JsonParser.parseString(lines[lines.length - 1]).getAsJsonObject();
-        return jsonObject.get("error").getAsString();
+        return jsonObject.get("error") != null ? jsonObject.get("error").getAsString() : null;
     }
 
     public static String parseError(String error) {
@@ -214,6 +230,49 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         hexString = hexString.replaceFirst("^0+", "");
 
         return hexString.isEmpty() ? "0" : hexString;
+    }
+
+    private static String extractReturnData(ByteArrayOutputStream byteArrayOutputStream) {
+        String[] lines = byteArrayOutputStream.toString().split("\\r?\\n");
+        JsonObject jsonObject = JsonParser.parseString(lines[lines.length - 1]).getAsJsonObject();
+
+        String memory = jsonObject.get("memory").getAsString();
+
+        JsonArray stack = jsonObject.get("stack").getAsJsonArray();
+        int offset = Integer.decode(stack.get(stack.size() - 1).getAsString());
+        int size = Integer.decode(stack.get(stack.size() - 2).getAsString());
+
+        return memory.substring(2 + offset * 2, 2 + offset * 2 + size * 2);
+    }
+
+    private static int extractIntegerFromReturnData(ByteArrayOutputStream byteArrayOutputStream) {
+        String returnData = extractReturnData(byteArrayOutputStream);
+        return Integer.decode("0x" + returnData);
+    }
+
+    private static String parseEvmOutput(ByteArrayOutputStream byteArrayOutputStream) {
+        String returnData = extractReturnData(byteArrayOutputStream);
+
+        // Check if it's a boolean true
+        if (returnData.equals("0000000000000000000000000000000000000000000000000000000000000001")) {
+            return ""; // Return nothing if it's true
+        }
+
+        // Check if it's a boolean false
+        if (returnData.equals("0000000000000000000000000000000000000000000000000000000000000000")) {
+            return "false"; // or handle false case differently if needed
+        }
+
+        // Otherwise, treat it as an integer
+        return Integer.toString(Integer.decode("0x" + returnData));
+    }
+
+    private static boolean extractBooleanFromReturnData(ByteArrayOutputStream byteArrayOutputStream) {
+        // Parse the last byte (in Solidity, booleans are typically the last byte)
+        // We'll check if the last byte is non-zero (true) or zero (false)
+        String returnData = extractReturnData(byteArrayOutputStream);
+        String lastByte = returnData.substring(returnData.length() - 2);
+        return !lastByte.equals("00");
     }
 
 }

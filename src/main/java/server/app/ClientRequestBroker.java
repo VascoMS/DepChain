@@ -6,7 +6,6 @@ import common.primitives.AuthenticatedPerfectLink;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.consensus.exception.LinkException;
-import server.consensus.exception.TransactionExecutionException;
 import server.evm.model.TransactionResult;
 import util.Observer;
 
@@ -44,8 +43,11 @@ public class ClientRequestBroker implements Observer<Message> {
 
     private void handleRequest(String senderId, ClientRequest clientRequest) {
         ServerResponse serverResponse;
-        if(clientRequest.command() == Command.BALANCE) {
-            serverResponse = balance(clientRequest.id(), clientRequest.transaction());
+        if(!clientRequest.transaction().isValid()) {
+            serverResponse =
+                    new ServerResponse(clientRequest.id(), false, "Invalid transaction.");
+        } else if(clientRequest.command() == TransactionType.OFFCHAIN) {
+            serverResponse = offChainTransaction(clientRequest.id(), clientRequest.transaction());
         } else {
             serverResponse = onChainTransaction(clientRequest.id(), clientRequest.transaction());
         }
@@ -62,7 +64,7 @@ public class ClientRequestBroker implements Observer<Message> {
         }
     }
     
-    private ServerResponse balance(String clientReqId, Transaction transaction) {
+    private ServerResponse offChainTransaction(String clientReqId, Transaction transaction) {
         TransactionResult result = node.submitOffChainTransaction(transaction);
         return new ServerResponse(clientReqId, result.isSuccess(), result.message());
     }

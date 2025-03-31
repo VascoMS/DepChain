@@ -1,7 +1,6 @@
 package server.blockchain;
 
 import com.google.gson.Gson;
-import common.model.Transaction;
 import org.slf4j.Logger;
 import server.blockchain.model.Block;
 import server.blockchain.model.GenesisBlock;
@@ -18,11 +17,13 @@ public class BlockchainImpl implements Blockchain {
     private final List<Block> blockchain;
     private final KeyService keyService;
     private final ExecutionEngine executionEngine;
+    private final int minBlockSize;
 
-    public BlockchainImpl(KeyService keyService, ExecutionEngine executionEngine) {
+    public BlockchainImpl(KeyService keyService, ExecutionEngine executionEngine, int minBlockSize) {
         this.blockchain = new ArrayList<>();
         this.keyService = keyService;
         this.executionEngine = executionEngine;
+        this.minBlockSize = minBlockSize;
     }
 
     public void bootstrap(String genesisFilePath) {
@@ -34,7 +35,6 @@ public class BlockchainImpl implements Blockchain {
         } catch (IOException e) {
             logger.error("Error reading genesis file: {}", e.getMessage());
         }
-
     }
 
     public boolean validateNextBlock(Block block) {
@@ -65,7 +65,7 @@ public class BlockchainImpl implements Blockchain {
         }
 
         // Validate transactions
-        if (!validateBlockTransactions(block)) {
+        if (!block.validateBlockTransactions(keyService, minBlockSize)) {
             return false;
         }
 
@@ -80,35 +80,13 @@ public class BlockchainImpl implements Blockchain {
         return true;
     }
 
-    private boolean validateBlockTransactions(Block block) {
-        if (block.getTransactions() == null || block.getTransactions().isEmpty()) {
-            return true; // No transactions to validate
-        }
-
-        for (Transaction transaction : block.getTransactions()) {
-            try {
-                String publicKeyId = "c" + transaction.from();
-                if (!transaction.verifySignature(keyService.loadPublicKey(publicKeyId))) {
-                    logger.warn("Invalid signature for transaction from {}", transaction.from());
-                    return false;
-                }
-            } catch (Exception e) {
-                logger.error("Error verifying transaction signature for sender {}: {}",
-                        transaction.from(), e.getMessage());
-                return false;
-            }
-        }
-
-        return true;
-    }
-
     public synchronized void addBlock(Block block) {
         logger.info("Adding block to blockchain: {}", block.getBlockHash());
         blockchain.add(block);
         executionEngine.executeTransactions(block.getTransactions());
     }
 
-    public synchronized Block getLastBlock() {
+    public Block getLastBlock() {
         return blockchain.get(blockchain.size() - 1);
     }
 }

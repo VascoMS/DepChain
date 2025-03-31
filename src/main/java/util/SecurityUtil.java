@@ -3,6 +3,7 @@ package util;
 import common.model.Message;
 import common.model.SignedMessage;
 import common.model.Transaction;
+import org.bouncycastle.util.encoders.Hex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.consensus.core.model.ConsensusPayload;
@@ -197,14 +198,15 @@ public class SecurityUtil {
         return verifySignature(verifier, dataToVerify, transaction.signature());
     }
 
-    public static String signTransaction(String transactionId, String clientId, String content, PrivateKey privateKey) throws Exception {
+    public static String signTransaction(String transactionId, String clientId, String calldata, int value, PrivateKey privateKey) throws Exception {
         logger.info("Signing transaction...");
         Signature signer = initSigner(privateKey);
 
         byte[][] dataToSign = {
                 transactionId.getBytes(),
                 clientId.getBytes(),
-                content.getBytes()
+                calldata != null ? calldata.getBytes() : null,
+                intToBytes(value)
         };
 
         return createSignature(signer, dataToSign);
@@ -264,7 +266,7 @@ public class SecurityUtil {
                     digest.update(d);
             }
             byte[] hash = digest.digest();
-            return Base64.getEncoder().encodeToString(hash);
+            return Hex.toHexString(hash);
         } catch (NoSuchAlgorithmException e) {
             logger.error("Error generating hash: " + e.getMessage());
             return null;

@@ -7,8 +7,6 @@ class ClientConsole {
     private final Scanner scanner;
     private final ClientOperations operations;
 
-    private enum
-
     public ClientConsole(Scanner scanner, ClientOperations operations) {
         this.scanner = scanner;
         this.operations = operations;
@@ -24,8 +22,8 @@ class ClientConsole {
 
     private void displayMenu() {
         System.out.println("Choose an option:");
-        System.out.println("balance");
-        System.out.println("transfer <currency(IST or DEP)> <recipient> <value>");
+        System.out.println("balance <token>");
+        System.out.println("transfer <recipient> <value> <token>");
         System.out.println("add-blacklist <address>");
         System.out.println("remove-blacklist <address>");
         System.out.println("exit");
@@ -39,27 +37,36 @@ class ClientConsole {
         try {
             switch (command) {
                 case "balance" -> {
-                    if(args.length != 0) {
-                        System.out.println("Invalid number of arguments, balance command does not take any arguments.");
+                    if(args.length != 1) {
+                        System.out.println("Invalid number of arguments, specify currency type.");
                         return;
                     }
-                    int balance = operations.balance();
-                    System.out.println("Current balance: " + balance);
+                    TokenType tokenType = TokenType.getTokenTypeFromSymbol(args[0]);
+                    if(tokenType == null) {
+                        System.out.println("Invalid token type. Must be either DEP or IST.");
+                    } else {
+                        int balance = operations.balance(tokenType);
+                        System.out.println("Current balance: " + balance);
+                    }
                 }
                 case "transfer" -> {
                     if(args.length != 3) {
                         System.out.println("Invalid number of arguments, " +
-                                "provide the address of the receiver and the amount of tokens transfered.");
+                                "provide the address of the receiver, the amount of tokens and the token symbol.");
                         return;
                     }
                     try {
-                        String currencyType = args[0];
-                        String recipientAddress = args[1];
-                        int tokensTransferred = Integer.parseInt(args[2]);
-                        if(tokensTransferred > 0) {
-                            operations.transfer(recipientAddress, tokensTransferred);
+                        String recipientAddress = args[0];
+                        int tokensTransferred = Integer.parseInt(args[1]);
+                        TokenType tokenType = TokenType.getTokenTypeFromSymbol(args[2]);
+                        if(tokenType == null) {
+                            System.out.println("Invalid token type. Must be either DEP or IST.");
                         } else {
-                            System.out.println("Invalid token amount: must be a positive integer.");
+                            if(tokensTransferred > 0) {
+                                operations.transfer(recipientAddress, tokensTransferred, tokenType);
+                            } else {
+                                System.out.println("Invalid token amount: must be a positive integer.");
+                            }
                         }
                     } catch(NumberFormatException nfe) {
                         System.out.println("Invalid inputs: Address must be a hex string " +

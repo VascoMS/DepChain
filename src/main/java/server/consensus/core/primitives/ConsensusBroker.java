@@ -37,9 +37,10 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
     private final List<Observer<ConsensusOutcomeDto>> consensusOutcomeObservers;
     private ConsensusByzantineMode byzantineMode;
     private Thread brokerThread;
-    private static final int MIN_BLOCK_SIZE = 2;
+    private final int minBlockSize;
 
-    public ConsensusBroker(Process myProcess, Process[] peers, AuthenticatedPerfectLink link, int byzantineProcesses, KeyService keyService, Blockchain blockchain, int blockTime) {
+
+    public ConsensusBroker(Process myProcess, Process[] peers, AuthenticatedPerfectLink link, int byzantineProcesses, KeyService keyService, Blockchain blockchain, int blockTime, int minBlockSize) {
         this.consensusMessageQueues = new ConcurrentHashMap<>();
         this.consensusOutcomeObservers = new ArrayList<>();
         this.myProcess = myProcess;
@@ -51,6 +52,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
         this.byzantineProcesses = byzantineProcesses;
         this.keyService = keyService;
         this.byzantineMode = ConsensusByzantineMode.NORMAL;
+        this.minBlockSize = minBlockSize;
         this.brokerThread = null;
         link.addObserver(this);
     }
@@ -74,7 +76,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
                 if (activeConsensusInstances.containsKey(currentRound)) {
                     logger.info("{}: Consensus round {} already active", myProcess.getId(), currentRound);
                     consensus = activeConsensusInstances.get(currentRound);
-                } else if(mempool.size() > MIN_BLOCK_SIZE) {
+                } else if(mempool.size() >= minBlockSize) {
                     Block proposal = buildBlock();
                     consensus = new Consensus(currentRound, proposal, this, myProcess, peers,
                             keyService, link, byzantineProcesses, totalEpochs, byzantineMode);

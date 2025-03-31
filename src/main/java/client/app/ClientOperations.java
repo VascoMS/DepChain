@@ -22,6 +22,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.math.BigInteger;
 import java.util.concurrent.TimeUnit;
 
+import static client.app.TokenType.ISTCOIN;
+import static client.app.TokenType.DEPCOIN;
+
 class ClientOperations implements Observer<Message> {
 
     private static final String KEYSTORE_PATH = "src/main/java/client/keys/keystore.p12";
@@ -63,12 +66,20 @@ class ClientOperations implements Observer<Message> {
         link.addObserver(this);
     }
 
-    public int balance() throws Exception {
+    public int balance(TokenType tokenType) throws Exception {
         String id = UUID.randomUUID().toString();
+        String calldata = tokenType.equals(ISTCOIN)
+                ? Operations.BALANCE.callDataPrefix + padHexStringTo256Bit(myId)
+                : null;
+        String receiver = tokenType.equals(DEPCOIN) ? null : contractAddress;
         ClientRequest request = new ClientRequest(
                 id,
-                Command.BALANCE,
-                createTransaction(Operations.BALANCE.callDataPrefix + padHexStringTo256Bit(myId), 0)
+                TransactionType.OFFCHAIN,
+                createTransaction(
+                        receiver,
+                        calldata,
+                        0
+                )
         );
         CompletableFuture<ServerResponse> future = sendToServers(request);
         ServerResponse result = future.get();
@@ -81,15 +92,22 @@ class ClientOperations implements Observer<Message> {
         }
     }
 
-    public void transfer(String recipientAddress, int value) throws Exception {
+    public void transfer(String recipientAddress, int value, TokenType tokenType) throws Exception {
         String id = UUID.randomUUID().toString();
+        String calldata = tokenType.equals(ISTCOIN) ?
+                Operations.TRANSFER.callDataPrefix +
+                padHexStringTo256Bit(recipientAddress) +
+                convertIntegerToHex256Bit(value)
+                : null;
+        String receiver = tokenType.equals(DEPCOIN) ? recipientAddress : contractAddress;
+        int baseCurrencyValue = tokenType.equals(DEPCOIN) ? 0 : value;
         ClientRequest request = new ClientRequest(
                 id,
-                Command.TRANSFER,
+                TransactionType.ONCHAIN,
                 createTransaction(
-                        Operations.TRANSFER.callDataPrefix +
-                                padHexStringTo256Bit(recipientAddress) +
-                                convertIntegerToHex256Bit(value),
+                        receiver,
+                        calldata,
+                        baseCurrencyValue
                 )
         );
         CompletableFuture<ServerResponse> future = sendToServers(request);
@@ -105,8 +123,9 @@ class ClientOperations implements Observer<Message> {
         String id = UUID.randomUUID().toString();
         ClientRequest request = new ClientRequest(
                 id,
-                Command.ADD_TO_BLACKLIST,
+                TransactionType.ONCHAIN,
                 createTransaction(
+                        contractAddress,
                         Operations.ADD_TO_BLACKLIST.callDataPrefix +
                                 padHexStringTo256Bit(address),
                         0
@@ -125,8 +144,9 @@ class ClientOperations implements Observer<Message> {
         String id = UUID.randomUUID().toString();
         ClientRequest request = new ClientRequest(
                 id,
-                Command.REMOVE_FROM_BLACKLIST,
+                TransactionType.ONCHAIN,
                 createTransaction(
+                        contractAddress,
                         Operations.REMOVE_FROM_BLACKLIST.callDataPrefix +
                                 padHexStringTo256Bit(address),
                         0
@@ -160,11 +180,11 @@ class ClientOperations implements Observer<Message> {
         return future;
     }
 
-    private Transaction createTransaction(String calldata, int value) throws Exception {
+    private Transaction createTransaction(String receiver, String calldata, int value) throws Exception {
         String id = UUID.randomUUID().toString();
         PrivateKey privateKey = keyService.loadPrivateKey(myId);
-        String signature = SecurityUtil.signTransaction(id, myId, calldata, privateKey);
-        return new Transaction(id, myId, contractAddress, calldata, signature, value); //
+        String signature = SecurityUtil.signTransaction(id, myId, calldata, value, privateKey);
+        return new Transaction(id, myId, receiver, calldata, value, signature); //
     }
 
     private static String convertIntegerToHex256Bit(int number) {

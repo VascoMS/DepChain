@@ -6,7 +6,7 @@ import "./Blacklist.sol";
 // Implemented using inheritance due to issues making cross contract calls with the Besu EVM implementation
 
 contract ISTCoin is ERC20, Blacklist {
-
+    mapping(address => bool) private _blacklist;
     constructor () ERC20("ISTCoin", "IST") Blacklist() {
         _mint(msg.sender, 1000000 * (10 ** decimals()));
     }

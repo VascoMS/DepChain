@@ -16,7 +16,7 @@ public class MerkleTree {
         return merkleTree.get(0); // return root
     }
 
-    private static List<String> merkleTree(List<String> hashList){
+    private static List<String> merkleTree(List<String> hashList) {
         //Return the Merkle Root
         if(hashList.size() == 1){
             return hashList;
@@ -36,8 +36,7 @@ public class MerkleTree {
         return merkleTree(parentHashList);
     }
 
-    public static String getSHA(String input)
-    {
+    public static String getSHA(String input) {
         try {
 
             // Static getInstance method is called with hashing SHA
