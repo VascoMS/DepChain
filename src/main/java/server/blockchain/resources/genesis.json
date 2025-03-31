@@ -1,5 +1,5 @@
 {
-  "block_hash": "<HASH_OF_LIST_OF_TRANSACTIONS>",
+  "block_hash": "0xd1b5a5dcc3fcde3c498c74d7c049143c0e059a115fc3bbfa2b1392d37e1ea3ba",
   "previous_block_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
   "transactions": [],
   "state": {

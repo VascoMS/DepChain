@@ -49,11 +49,13 @@ public class BlockchainImpl implements Blockchain {
         }
 
         Block lastBlock = blockchain.get(blockchain.size() - 1);
+        String thisParentHash = block.getParentHash();
+        String lastParentHash = lastBlock.getParentHash();
 
         // Validate parent hash
-        if (!block.getParentHash().equals(lastBlock.getBlockHash())) {
+        if (!thisParentHash.equals(lastParentHash)) {
             logger.warn("Invalid parent hash: expected {}, got {}",
-                    lastBlock.getBlockHash(), block.getParentHash());
+                    thisParentHash, lastParentHash);
             return false;
         }
 

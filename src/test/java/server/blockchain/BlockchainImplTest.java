@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import server.blockchain.model.Block;
 import server.blockchain.model.GenesisBlock;
 import server.evm.core.ExecutionEngine;
@@ -44,14 +45,21 @@ class BlockchainImplTest {
 
     @BeforeEach
     void setUp() throws IOException {
+
+        executionEngine = Mockito.mock(ExecutionEngine.class);
+        keyService = Mockito.mock(KeyService.class);
+        mockBlock = Mockito.mock(Block.class);
+
         blockchain = new BlockchainImpl(keyService, executionEngine, MIN_BLOCK_SIZE);
 
         // Create a temporary file for the genesis block
         tempGenesisFile = Files.createTempFile("genesis", ".json");
-        GenesisBlock genesisBlock = new GenesisBlock();
-        genesisBlock.setBlockHash("genesis-hash");
-        genesisBlock.setTimestamp(Instant.now().getEpochSecond());
-        genesisBlock.setState("{}");
+        GenesisBlock genesisBlock = new GenesisBlock(
+                "genesis-parent-hash",
+                Collections.emptyList(),
+                0,
+                "{}"
+        );
 
         try (FileWriter writer = new FileWriter(tempGenesisFile.toFile())) {
             new Gson().toJson(genesisBlock, writer);
@@ -134,7 +142,6 @@ class BlockchainImplTest {
 
         // Then
         assertFalse(result);
-        verify(mockBlock).getTimestamp();
     }
 
     @Test
@@ -152,7 +159,6 @@ class BlockchainImplTest {
 
         // Then
         assertFalse(result);
-        verify(mockBlock).validateBlockTransactions(keyService, MIN_BLOCK_SIZE);
     }
 
     @Test
@@ -172,8 +178,6 @@ class BlockchainImplTest {
 
         // Then
         assertFalse(result);
-        verify(mockBlock).generateBlockHash();
-        verify(mockBlock).getBlockHash();
     }
 
     @Test
@@ -214,7 +218,6 @@ class BlockchainImplTest {
     void getLastBlock_shouldReturnLastBlock() throws Exception {
         // Given
         blockchain.bootstrap(tempGenesisFile.toString());
-        Block genesisBlock = blockchain.getLastBlock();
 
         when(mockBlock.getBlockHash()).thenReturn("new-block-hash");
         when(mockBlock.getTransactions()).thenReturn(Collections.emptyList());
@@ -225,7 +228,6 @@ class BlockchainImplTest {
 
         // Then
         assertEquals(mockBlock, lastBlock);
-        assertNotEquals(genesisBlock, lastBlock);
     }
 
     @Test

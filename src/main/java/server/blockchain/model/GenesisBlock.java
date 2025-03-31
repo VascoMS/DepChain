@@ -9,11 +9,6 @@ import java.util.List;
 public class GenesisBlock extends Block{
     private final String state;
 
-    @Override
-    public String generateBlockHash() {
-
-    }
-
     public GenesisBlock(String parentHash, List<Transaction> transactions, int timestamp, String state) {
         super(parentHash, transactions, timestamp);
         this.state = state;
