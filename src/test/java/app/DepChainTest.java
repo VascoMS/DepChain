@@ -7,7 +7,10 @@ import common.model.ServerResponse;
 import common.model.Transaction;
 import common.model.TransactionType;
 import java.security.PrivateKey;
+import java.util.List;
+import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import org.junit.jupiter.api.AfterAll;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.BeforeAll;
@@ -36,10 +39,14 @@ public class DepChainTest {
     private static final int BLOCK_TIME = 6000;
 
     private static final KeyService SERVER_KEY_SERVICE;
+    private static final KeyService CLIENT_KEY_SERVICE;
+
+    private final List<TestClientOp> clientOps = List.of(this::balanceAndSend, this::spoofRecipient, this::offChainAttempt);
 
     static {
         try {
             SERVER_KEY_SERVICE = new KeyService(SecurityUtil.SERVER_KEYSTORE_PATH, "mypass");
+            CLIENT_KEY_SERVICE = new KeyService(SecurityUtil.CLIENT_KEYSTORE_PATH, "mypass");
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -73,29 +80,54 @@ public class DepChainTest {
         bobClient = new ClientOperations(bob, processes);
     }
 
-    @Test
-    public void spoofingAttempt() throws Exception {
-        // Assemble (alice spoofing as bob)
-        KeyService clientKeyService = new KeyService(SecurityUtil.CLIENT_KEYSTORE_PATH,  "mypass");
-        PrivateKey privateKey = clientKeyService.loadPrivateKey(alice.getId());
 
-        String spoofedBobId = bob.getId();
+    private ClientRequest createSpoofedRequest(String actualSenderId, String spoofedSenderId) throws Exception {
+        PrivateKey privateKey = CLIENT_KEY_SERVICE.loadPrivateKey(actualSenderId);
+
         String transactionId = UUID.randomUUID().toString();
-        String signature = SecurityUtil.signTransaction(transactionId, spoofedBobId, null, null, 0, privateKey);
+        String signature = SecurityUtil.signTransaction(transactionId, spoofedSenderId, null, null, 0, privateKey);
 
-        Transaction depcoinBalanceCall = new Transaction(
+        Transaction transaction = new Transaction(
                 UUID.randomUUID().toString(),
-                bob.getId(),
+                spoofedSenderId,
                 null,
                 null,
                 0,
                 signature
         );
 
-        ClientRequest spoofClientRequest = new ClientRequest(bob.getId(), TransactionType.OFFCHAIN, depcoinBalanceCall);
+        return new ClientRequest(spoofedSenderId, TransactionType.OFFCHAIN, transaction);
+    }
 
-        // Act
-        ServerResponse response = aliceClient.sendRequest(spoofClientRequest);
+    private ClientRequest createOffChainTransferRequest(String senderId, String recipientId, int amount) throws Exception {
+        PrivateKey privateKey = CLIENT_KEY_SERVICE.loadPrivateKey(senderId);
+
+        String transactionId = UUID.randomUUID().toString();
+        String signature = SecurityUtil.signTransaction(
+                transactionId,
+                senderId,
+                recipientId,
+                null,
+                amount,
+                privateKey);
+
+        Transaction transaction = new Transaction(
+                UUID.randomUUID().toString(),
+                senderId,
+                recipientId,
+                null,
+                amount,
+                signature
+        );
+
+        return new ClientRequest(senderId, TransactionType.OFFCHAIN, transaction);
+    }
+
+    @Test
+    public void spoofingAttempt() throws Exception {
+        // Act - Alice spoofing as Bob
+        ClientRequest spoofRequest = createSpoofedRequest(alice.getId(), bob.getId());
+        ServerResponse response = aliceClient.sendRequest(spoofRequest);
 
         // Assert
         assertFalse(response.success());
@@ -136,37 +168,13 @@ public class DepChainTest {
 
     @Test
     public void offChainingAnOnChainTransaction() throws Exception {
-        // Assemble (transfer off-chain)
-        KeyService clientKeyService = new KeyService(SecurityUtil.CLIENT_KEYSTORE_PATH,  "mypass");
-        PrivateKey privateKey = clientKeyService.loadPrivateKey(alice.getId());
-
-        String transactionId = UUID.randomUUID().toString();
-        String signature = SecurityUtil.signTransaction(
-                transactionId,
-                alice.getId(),
-                bob.getId(),
-                null,
-                10,
-                privateKey);
-
-        Transaction depcoinBalanceCall = new Transaction(
-                UUID.randomUUID().toString(),
-                alice.getId(),
-                bob.getId(),
-                null,
-                10,
-                signature
-        );
-
-        ClientRequest spoofClientRequest = new ClientRequest(bob.getId(), TransactionType.OFFCHAIN, depcoinBalanceCall);
-
-        // Act
-        ServerResponse response = aliceClient.sendRequest(spoofClientRequest);
+        // Act - Alice trying to make a transfer using off-chain transaction type
+        ClientRequest offChainRequest = createOffChainTransferRequest(alice.getId(), bob.getId(), 10);
+        ServerResponse response = aliceClient.sendRequest(offChainRequest);
 
         // Assert
         assertFalse(response.success());
     }
-
 
     @Test
     public void manageBlacklistWhenNotOwner() throws Exception {
@@ -243,7 +251,153 @@ public class DepChainTest {
 
         // Assert
         assertTrue(notBlacklistedTransferSuccess);
+    }
 
+    @Test
+    public void oneMinuteStressTest() throws Exception {
+        // Assemble
+        ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
+        ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
+
+        long testDuration = 60_000;
+        long delay = 100;
+
+        Thread aliceThread = new Thread(() -> clientLoop(aliceClient, bob.getId(), testDuration, delay, failures, errors));
+        Thread bobThread = new Thread(() -> clientLoop(bobClient, alice.getId(), testDuration, delay, failures, errors));
+
+        aliceThread.start();
+        bobThread.start();
+
+        aliceThread.join();
+        bobThread.join();
+
+        if(!failures.isEmpty()) {
+            throw failures.peek();
+        }
+
+        if(!errors.isEmpty()) {
+            throw errors.peek();
+        }
+    }
+
+    private void clientLoop(
+            ClientOperations client,
+            String transferRecipient,
+            long duration,
+            long delay,
+            ConcurrentLinkedQueue<AssertionError> failures,
+            ConcurrentLinkedQueue<Exception> errors
+    ) {
+        try {
+            long startTime = System.currentTimeMillis();
+            while(duration > System.currentTimeMillis() - startTime) {
+                TestClientOp op = randomOp();
+
+                op.doOperation(client, transferRecipient, failures, errors);
+
+                // Wait until delay ends.
+                Thread.sleep(delay);
+            }
+        } catch (Exception e) {
+            // May be because test thread interrupted them, so silence them.
+            if(!(e instanceof InterruptedException)) {
+                errors.add(e);
+            }
+        }
+    }
+
+    private void balanceAndSend (
+            ClientOperations client,
+            String transferRecipient,
+            ConcurrentLinkedQueue<AssertionError> failures,
+            ConcurrentLinkedQueue<Exception> errors
+    ) {
+        try {
+            // Balance
+            TokenType tokenType = randomTokenType();
+            int balance = client.balance(tokenType);
+            assertTrue(balance > -1);
+            // Transfer
+            if(balance > 0) {
+                int amountSent = new Random().nextInt(balance);
+                assertTrue(client.transfer(transferRecipient, amountSent, tokenType));
+            }
+        } catch (AssertionError ae) {
+            failures.add(ae);
+        } catch (Exception e) {
+            // May be because test thread interrupted them, so silence them.
+            if(!(e instanceof InterruptedException)) {
+                errors.add(e);
+            }
+        }
+    }
+
+    private void spoofRecipient (
+            ClientOperations client,
+            String transferRecipient,
+            ConcurrentLinkedQueue<AssertionError> failures,
+            ConcurrentLinkedQueue<Exception> errors
+    ) {
+        try {
+            // Get the sender ID (the one who will be spoofed)
+            String senderId = transferRecipient.equals(alice.getId()) ? bob.getId() : alice.getId();
+
+            // Create spoofed request
+            ClientRequest spoofClientRequest = createSpoofedRequest(senderId, transferRecipient);
+
+            // Act
+            ServerResponse response = client.sendRequest(spoofClientRequest);
+
+            // Assert
+            assertFalse(response.success());
+        } catch (AssertionError ae) {
+            failures.add(ae);
+        } catch (Exception e) {
+            // May be because test thread interrupted them, so silence them.
+            if(!(e instanceof InterruptedException)) {
+                errors.add(e);
+            }
+        }
+    }
+
+    private void offChainAttempt (
+            ClientOperations client,
+            String transferRecipient,
+            ConcurrentLinkedQueue<AssertionError> failures,
+            ConcurrentLinkedQueue<Exception> errors
+    ) {
+        try {
+            // Get the client ID (who is sending)
+            String clientId = transferRecipient.equals(alice.getId()) ? bob.getId() : alice.getId();
+
+            // Create off-chain transfer request
+            ClientRequest clientRequest = createOffChainTransferRequest(clientId, transferRecipient, 10);
+
+            // Act
+            ServerResponse response = client.sendRequest(clientRequest);
+
+            // Assert
+            assertFalse(response.success());
+        } catch (AssertionError ae) {
+            failures.add(ae);
+        } catch (Exception e) {
+            // May be because test thread interrupted them, so silence them.
+            if(!(e instanceof InterruptedException)) {
+                errors.add(e);
+            }
+        }
+    }
+
+    private TestClientOp randomOp() {
+        int ops = clientOps.size();
+        int chosenOp = new Random().nextInt(ops);
+        return clientOps.get(chosenOp);
+    }
+
+    private TokenType randomTokenType() {
+        int tokens = TokenType.values().length;
+        int chosenTokenValue = new Random().nextInt(tokens);
+        return TokenType.values()[chosenTokenValue];
     }
 
     @AfterAll
@@ -255,5 +409,4 @@ public class DepChainTest {
             client.close();
         }
     }
-
 }
