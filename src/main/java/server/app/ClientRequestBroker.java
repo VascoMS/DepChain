@@ -3,6 +3,7 @@ package server.app;
 import com.google.gson.Gson;
 import common.model.*;
 import common.primitives.AuthenticatedPerfectLink;
+import common.primitives.LinkType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.evm.model.TransactionResult;
@@ -12,8 +13,10 @@ import util.Observer;
 import java.security.PublicKey;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import util.Process;
+import util.SecurityUtil;
 
-public class ClientRequestBroker implements Observer<Message> {
+public class ClientRequestBroker implements Observer<Message>, AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(ClientRequestBroker.class);
     private final String myId;
@@ -22,9 +25,12 @@ public class ClientRequestBroker implements Observer<Message> {
     private final KeyService keyService;
     private final ExecutorService executor;
 
-    public ClientRequestBroker(String myId, AuthenticatedPerfectLink link, Node node, KeyService keyService) {
-        this.myId = myId;
-        this.link = link;
+    public ClientRequestBroker(Process myProcess, Process[] clients, Node node, KeyService keyService) throws Exception {
+        this.myId = myProcess.getId();
+        this.link = new AuthenticatedPerfectLink(
+                new Process(myProcess.getId(), myProcess.getHost(), myProcess.getPort() + 100),
+                clients,
+                LinkType.SERVER_TO_CLIENT, 100, SecurityUtil.SERVER_KEYSTORE_PATH);;
         this.node = node;
         this.keyService = keyService;
         this.executor = Executors.newFixedThreadPool(5);
@@ -35,6 +41,12 @@ public class ClientRequestBroker implements Observer<Message> {
         if(message.getType() != Message.Type.REQUEST_RESPONSE) return;
         ClientRequest clientRequest = new Gson().fromJson(message.getPayload(), ClientRequest.class);
         executor.execute(() -> handleRequest(message.getSenderId(), clientRequest));
+    }
+
+    @Override
+    public void close() throws Exception {
+        link.close();
+        node.close();
     }
 
     public void start() {

@@ -19,7 +19,7 @@ import util.SecurityUtil;
 
 import java.util.Arrays;
 
-public class Node implements Observer<ConsensusOutcomeDto> {
+public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(Node.class);
     private final Process myProcess;
     private final Blockchain blockchain;
@@ -75,12 +75,19 @@ public class Node implements Observer<ConsensusOutcomeDto> {
         processLink.start();
     }
 
-    // TODO: Maybe add catch up start if we have time
+    public void waitForTermination() {
+        processLink.waitForTermination();
+    }
 
     @Override
     public void update(ConsensusOutcomeDto message) {
         if(message.decision() != null) {
             blockchain.addBlock(message.decision());
         }
+    }
+
+    @Override
+    public void close() throws Exception {
+        processLink.close();
     }
 }

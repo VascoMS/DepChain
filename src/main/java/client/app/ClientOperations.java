@@ -5,6 +5,7 @@ import common.model.*;
 import common.primitives.AuthenticatedPerfectLink;
 import common.primitives.LinkType;
 import common.util.Addresses;
+import lombok.Getter;
 import server.consensus.exception.LinkException;
 import util.KeyService;
 import util.Observer;
@@ -25,9 +26,9 @@ import java.util.concurrent.TimeUnit;
 import static client.app.TokenType.ISTCOIN;
 import static client.app.TokenType.DEPCOIN;
 
-class ClientOperations implements Observer<Message> {
+public class ClientOperations implements Observer<Message>, AutoCloseable {
 
-    private static final String KEYSTORE_PATH = "src/main/java/client/keys/keystore.p12";
+    private static final String KEYSTORE_PATH = SecurityUtil.CLIENT_KEYSTORE_PATH;
     private static final String KEYSTORE_PASS = "mypass";
     private final AuthenticatedPerfectLink link;
     private final String myId;
@@ -38,7 +39,8 @@ class ClientOperations implements Observer<Message> {
     private final int byzantineFailures = (serverIds.length - 1) / 3;
     private final String contractAddress;
 
-    private enum Operations {
+    @Getter
+    public enum Operations {
 
         BALANCE("70a08231"),
         TRANSFER("23b872dd"),
@@ -92,7 +94,7 @@ class ClientOperations implements Observer<Message> {
         }
     }
 
-    public void transfer(String recipientAddress, int value, TokenType tokenType) throws Exception {
+    public boolean transfer(String recipientAddress, int value, TokenType tokenType) throws Exception {
         String id = UUID.randomUUID().toString();
         String calldata = tokenType.equals(ISTCOIN) ?
                 Operations.TRANSFER.callDataPrefix +
@@ -117,9 +119,10 @@ class ClientOperations implements Observer<Message> {
         } else {
             System.out.println("Transfer fail.");
         }
+        return result.success();
     }
 
-    public void addToBlacklist(String address) throws Exception {
+    public boolean addToBlacklist(String address) throws Exception {
         String id = UUID.randomUUID().toString();
         ClientRequest request = new ClientRequest(
                 id,
@@ -138,9 +141,10 @@ class ClientOperations implements Observer<Message> {
         } else {
             System.out.println("Add to blacklist failed.");
         }
+        return result.success();
     }
 
-    public void removeFromBlacklist(String address) throws Exception {
+    public boolean removeFromBlacklist(String address) throws Exception {
         String id = UUID.randomUUID().toString();
         ClientRequest request = new ClientRequest(
                 id,
@@ -159,6 +163,18 @@ class ClientOperations implements Observer<Message> {
         } else {
             System.out.println("Remove from blacklist failed.");
         }
+        return result.success();
+    }
+
+    public ServerResponse sendRequest(ClientRequest clientRequest) throws Exception {
+        CompletableFuture<ServerResponse> future = sendToServers(clientRequest);
+        ServerResponse result = future.get();
+        if(result.success()) {
+            System.out.println("Success: " + result.payload());
+        } else {
+            System.out.println("Failed: " + result.payload());
+        }
+        return result;
     }
 
     private CompletableFuture<ServerResponse> sendToServers(ClientRequest clientRequest) throws LinkException {
@@ -183,7 +199,7 @@ class ClientOperations implements Observer<Message> {
     private Transaction createTransaction(String receiver, String calldata, int value) throws Exception {
         String id = UUID.randomUUID().toString();
         PrivateKey privateKey = keyService.loadPrivateKey(myId);
-        String signature = SecurityUtil.signTransaction(id, myId, calldata, value, privateKey);
+        String signature = SecurityUtil.signTransaction(id, myId, receiver, calldata, value, privateKey);
         return new Transaction(id, myId, receiver, calldata, value, signature); //
     }
 
@@ -229,5 +245,10 @@ class ClientOperations implements Observer<Message> {
         if((long) responses.size() == serverIds.length) {
             future.complete(new ServerResponse(response.requestId(), false, null));
         }
+    }
+
+    @Override
+    public void close() throws Exception {
+        link.close();
     }
 }

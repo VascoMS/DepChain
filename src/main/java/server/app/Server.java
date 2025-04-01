@@ -47,12 +47,7 @@ public class Server {
         try {
             KeyService keyService = new KeyService(SecurityUtil.SERVER_KEYSTORE_PATH, "mypass");
             Node node = new Node(basePort, myId, processes, blockTime, keyService);
-            AuthenticatedPerfectLink clientLink = new AuthenticatedPerfectLink(
-                    new Process(myProcess.getId(), myProcess.getHost(), myProcess.getPort() + 100),
-                    clients,
-                    LinkType.SERVER_TO_CLIENT, 100, SecurityUtil.SERVER_KEYSTORE_PATH);
-
-            ClientRequestBroker broker = new ClientRequestBroker(myId, clientLink, node, keyService);
+            ClientRequestBroker broker = new ClientRequestBroker(myProcess, clients, node, keyService);
             broker.start();
         } catch(Exception e) {
             throw new RuntimeException(e);

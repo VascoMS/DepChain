@@ -1,6 +1,6 @@
 package client.app;
 
-enum TokenType {
+public enum TokenType {
     DEPCOIN("DEP"), ISTCOIN("IST");
 
     String symbol;

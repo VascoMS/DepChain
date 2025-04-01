@@ -185,26 +185,29 @@ public class SecurityUtil {
         return verifySignature(verifier, dataToVerify, signature);
     }
 
-    public static boolean   verifySignature(Transaction transaction, PublicKey publicKey) throws Exception {
+    public static boolean verifySignature(Transaction transaction, PublicKey publicKey) throws Exception {
         logger.info("Verifying transaction signature...");
         Signature verifier = initVerifier(publicKey);
 
         byte[][] dataToVerify = {
                 transaction.id().getBytes(),
                 transaction.from().getBytes(),
-                transaction.data() != null ? transaction.data().getBytes() : null
+                transaction.to() != null ? transaction.to().getBytes() : null,
+                transaction.data() != null ? transaction.data().getBytes() : null,
+                intToBytes(transaction.value())
         };
 
         return verifySignature(verifier, dataToVerify, transaction.signature());
     }
 
-    public static String signTransaction(String transactionId, String clientId, String calldata, int value, PrivateKey privateKey) throws Exception {
+    public static String signTransaction(String transactionId, String clientId, String receiver, String calldata, int value, PrivateKey privateKey) throws Exception {
         logger.info("Signing transaction...");
         Signature signer = initSigner(privateKey);
 
         byte[][] dataToSign = {
                 transactionId.getBytes(),
                 clientId.getBytes(),
+                receiver != null ? receiver.getBytes() : null,
                 calldata != null ? calldata.getBytes() : null,
                 intToBytes(value)
         };
