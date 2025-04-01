@@ -9,8 +9,11 @@ import common.model.TransactionType;
 import java.security.PrivateKey;
 import java.util.List;
 import java.util.Random;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
+
 import org.junit.jupiter.api.AfterAll;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.BeforeAll;
@@ -35,11 +38,13 @@ public class DepChainTest {
     private static ClientRequestBroker server3;
 
     private static final int SERVER_BASE_PORT = 1024;
-    private static final int CLIENT_BASE_PORT = 924;
+    private static final int CLIENT_BASE_PORT = 8080;
     private static final int BLOCK_TIME = 6000;
 
     private static final KeyService SERVER_KEY_SERVICE;
     private static final KeyService CLIENT_KEY_SERVICE;
+
+    private static final AtomicLong nonce = new AtomicLong(1000);
 
     private final List<TestClientOp> clientOps = List.of(this::balanceAndSend, this::spoofRecipient, this::offChainAttempt);
 
@@ -63,58 +68,69 @@ public class DepChainTest {
         Process process2 = new Process("p2", "localhost", SERVER_BASE_PORT + 2);
         Process process3 = new Process("p3", "localhost", SERVER_BASE_PORT + 3);
 
+        Process clientProcess0 = new Process("p0", "localhost", SERVER_BASE_PORT + 100);
+        Process clientProcess1 = new Process("p1", "localhost", SERVER_BASE_PORT + 101);
+        Process clientProcess2 = new Process("p2", "localhost", SERVER_BASE_PORT + 102);
+        Process clientProcess3 = new Process("p3", "localhost", SERVER_BASE_PORT + 103);
+
         Process[] processes = { process0, process1, process2, process3 };
+        Process[] clientProcesses = { clientProcess0, clientProcess1, clientProcess2, clientProcess3 };
         Process[] clients = { alice, bob };
 
-        Node node0 = new Node(SERVER_BASE_PORT, process0.getId(), processes, BLOCK_TIME, SERVER_KEY_SERVICE);
-        Node node1 = new Node(SERVER_BASE_PORT, process1.getId(), processes, BLOCK_TIME, SERVER_KEY_SERVICE);
-        Node node2 = new Node(SERVER_BASE_PORT, process2.getId(), processes, BLOCK_TIME, SERVER_KEY_SERVICE);
-        Node node3 = new Node(SERVER_BASE_PORT, process3.getId(), processes, BLOCK_TIME, SERVER_KEY_SERVICE);
+        Node node0 = new Node(SERVER_BASE_PORT, process0.getId(), processes, SERVER_KEY_SERVICE);
+        Node node1 = new Node(SERVER_BASE_PORT, process1.getId(), processes, SERVER_KEY_SERVICE);
+        Node node2 = new Node(SERVER_BASE_PORT, process2.getId(), processes, SERVER_KEY_SERVICE);
+        Node node3 = new Node(SERVER_BASE_PORT, process3.getId(), processes, SERVER_KEY_SERVICE);
 
         server0 = new ClientRequestBroker(process0, clients, node0, SERVER_KEY_SERVICE);
         server1 = new ClientRequestBroker(process1, clients, node1, SERVER_KEY_SERVICE);
         server2 = new ClientRequestBroker(process2, clients, node2, SERVER_KEY_SERVICE);
         server3 = new ClientRequestBroker(process3, clients, node3, SERVER_KEY_SERVICE);
 
-        aliceClient = new ClientOperations(alice, processes);
-        bobClient = new ClientOperations(bob, processes);
+        server0.start();
+        server1.start();
+        server2.start();
+        server3.start();
+
+        aliceClient = new ClientOperations(alice, clientProcesses);
+        bobClient = new ClientOperations(bob, clientProcesses);
     }
 
 
     private ClientRequest createSpoofedRequest(String actualSenderId, String spoofedSenderId) throws Exception {
         PrivateKey privateKey = CLIENT_KEY_SERVICE.loadPrivateKey(actualSenderId);
 
-        String transactionId = UUID.randomUUID().toString();
-        String signature = SecurityUtil.signTransaction(transactionId, spoofedSenderId, null, null, 0, privateKey);
+        long currentNonce = nonce.getAndIncrement();
+        String signature = SecurityUtil.signTransaction(spoofedSenderId, actualSenderId, currentNonce, null, 1, privateKey);
 
         Transaction transaction = new Transaction(
-                UUID.randomUUID().toString(),
                 spoofedSenderId,
+                actualSenderId,
+                currentNonce,
                 null,
-                null,
-                0,
+                1,
                 signature
         );
 
-        return new ClientRequest(spoofedSenderId, TransactionType.OFFCHAIN, transaction);
+        return new ClientRequest(spoofedSenderId, TransactionType.ONCHAIN, transaction);
     }
 
     private ClientRequest createOffChainTransferRequest(String senderId, String recipientId, int amount) throws Exception {
         PrivateKey privateKey = CLIENT_KEY_SERVICE.loadPrivateKey(senderId);
 
-        String transactionId = UUID.randomUUID().toString();
+        long currentNonce = nonce.getAndIncrement();
         String signature = SecurityUtil.signTransaction(
-                transactionId,
                 senderId,
                 recipientId,
+                currentNonce,
                 null,
                 amount,
                 privateKey);
 
         Transaction transaction = new Transaction(
-                UUID.randomUUID().toString(),
                 senderId,
                 recipientId,
+                currentNonce,
                 null,
                 amount,
                 signature
@@ -135,23 +151,23 @@ public class DepChainTest {
 
     @Test
     public void replayAttackAttempt() throws Exception {
-        // Assemble (alice spoofing as bob)
+        // Assemble
         KeyService clientKeyService = new KeyService(SecurityUtil.CLIENT_KEYSTORE_PATH,  "mypass");
         PrivateKey privateKey = clientKeyService.loadPrivateKey(alice.getId());
 
-        String transactionId = UUID.randomUUID().toString();
-        String signature = SecurityUtil.signTransaction(transactionId, alice.getId(), null, null, 0, privateKey);
+        long currentNonce = nonce.getAndIncrement();
+        String signature = SecurityUtil.signTransaction(alice.getId(), bob.getId(), currentNonce, null, 1, privateKey);
 
-        Transaction depcoinBalanceCall = new Transaction(
-                UUID.randomUUID().toString(),
+        Transaction depcoinTransferCall = new Transaction(
                 alice.getId(),
+                bob.getId(),
+                currentNonce,
                 null,
-                null,
-                0,
+                1,
                 signature
         );
 
-        ClientRequest clientRequest = new ClientRequest(alice.getId(), TransactionType.OFFCHAIN, depcoinBalanceCall);
+        ClientRequest clientRequest = new ClientRequest(alice.getId(), TransactionType.OFFCHAIN, depcoinTransferCall);
 
         // Act
         ServerResponse response = aliceClient.sendRequest(clientRequest);
@@ -258,12 +274,14 @@ public class DepChainTest {
         // Assemble
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
+        ExecutorService aliceExecutor = Executors.newFixedThreadPool(5);
+        ExecutorService bobExecutor = Executors.newFixedThreadPool(5);
 
         long testDuration = 60_000;
-        long delay = 100;
+        long delay = 500;
 
-        Thread aliceThread = new Thread(() -> clientLoop(aliceClient, bob.getId(), testDuration, delay, failures, errors));
-        Thread bobThread = new Thread(() -> clientLoop(bobClient, alice.getId(), testDuration, delay, failures, errors));
+        Thread aliceThread = new Thread(() -> clientLoop(aliceClient, aliceExecutor, bob.getId(), testDuration, delay, failures, errors));
+        Thread bobThread = new Thread(() -> clientLoop(bobClient, bobExecutor, alice.getId(), testDuration, delay, failures, errors));
 
         aliceThread.start();
         bobThread.start();
@@ -282,6 +300,7 @@ public class DepChainTest {
 
     private void clientLoop(
             ClientOperations client,
+            ExecutorService clientExecutor,
             String transferRecipient,
             long duration,
             long delay,
@@ -293,7 +312,12 @@ public class DepChainTest {
             while(duration > System.currentTimeMillis() - startTime) {
                 TestClientOp op = randomOp();
 
-                op.doOperation(client, transferRecipient, failures, errors);
+                if(failures.isEmpty())
+                    break;
+                if(errors.isEmpty())
+                    break;
+
+                clientExecutor.submit(() -> op.doOperation(client, transferRecipient, failures, errors));
 
                 // Wait until delay ends.
                 Thread.sleep(delay);

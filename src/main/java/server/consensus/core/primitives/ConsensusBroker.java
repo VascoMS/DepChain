@@ -144,7 +144,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
         ConsensusPayload cPayload = new Gson().fromJson(message.getPayload(), ConsensusPayload.class);
         logger.info("{}: Received {} message from {}",
                 myProcess.getId(), cPayload.getCType(), cPayload.getSenderId());
-        if(currentConsensusRound.get() != cPayload.getConsensusId()) return;
+        if(currentConsensusRound.get() != cPayload.getConsensusId()) return; // TODO: Handle out of order messages better
         consensusMessageQueues.putIfAbsent(cPayload.getConsensusId(), new LinkedBlockingQueue<>());
         consensusMessageQueues.get(cPayload.getConsensusId()).add(cPayload);
     }

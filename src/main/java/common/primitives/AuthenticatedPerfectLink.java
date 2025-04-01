@@ -52,7 +52,7 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
 
     public void start() {
         stbLink.start();
-        if (linkType != LinkType.CLIENT_TO_SERVER) {
+        if (linkType != LinkType.SERVER_TO_CLIENT) {
             new Thread(() -> initiateKeyExchange(stbLink.getPeers().values().toArray(new Process[0]))).start();
         }
     }
@@ -69,8 +69,8 @@ public class AuthenticatedPerfectLink implements AutoCloseable, Subject<Message>
         }
 
         List<String> peersToShareKeys = (linkType == LinkType.SERVER_TO_SERVER)
-                ? Arrays.stream(peers).filter(peer -> myProcess.getId().compareTo(peer.getId()) < 0)
-                .map(Process::getId)
+                ? Arrays.stream(peers).map(Process::getId)
+                .filter(id -> myProcess.getId().compareTo(id) < 0)
                 .toList()
                 : Arrays.stream(peers).map(Process::getId).toList();
 

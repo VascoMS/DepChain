@@ -7,14 +7,12 @@ import common.primitives.LinkType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.evm.model.TransactionResult;
-import util.KeyService;
-import util.Observer;
+import util.*;
+import util.Process;
 
 import java.security.PublicKey;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import util.Process;
-import util.SecurityUtil;
 
 public class ClientRequestBroker implements Observer<Message>, AutoCloseable {
 
@@ -30,7 +28,7 @@ public class ClientRequestBroker implements Observer<Message>, AutoCloseable {
         this.link = new AuthenticatedPerfectLink(
                 new Process(myProcess.getId(), myProcess.getHost(), myProcess.getPort() + 100),
                 clients,
-                LinkType.SERVER_TO_CLIENT, 100, SecurityUtil.SERVER_KEYSTORE_PATH);;
+                LinkType.SERVER_TO_CLIENT, 100, SecurityUtil.SERVER_KEYSTORE_PATH);
         this.node = node;
         this.keyService = keyService;
         this.executor = Executors.newFixedThreadPool(5);
@@ -53,6 +51,9 @@ public class ClientRequestBroker implements Observer<Message>, AutoCloseable {
         link.addObserver(this);
         link.start();
         node.start();
+    }
+
+    public void waitForTermination() {
         link.waitForTermination();
     }
 
@@ -63,10 +64,7 @@ public class ClientRequestBroker implements Observer<Message>, AutoCloseable {
             if(senderPublicKey == null){
                 serverResponse = new ServerResponse(clientRequest.id(), false, "Unkown sender.");
             }
-            else if(!clientRequest.transaction().isValid(senderPublicKey)) {
-                serverResponse =
-                        new ServerResponse(clientRequest.id(), false, "Invalid transaction.");
-            } else if(clientRequest.command() == TransactionType.OFFCHAIN) {
+            else if(clientRequest.command() == TransactionType.OFFCHAIN) {
                 serverResponse = offChainTransaction(clientRequest.id(), clientRequest.transaction());
             } else {
                 serverResponse = onChainTransaction(clientRequest.id(), clientRequest.transaction());
@@ -90,6 +88,8 @@ public class ClientRequestBroker implements Observer<Message>, AutoCloseable {
 
     private ServerResponse onChainTransaction(String clientReqId, Transaction transaction) {
         try {
+            if(!transaction.isValid(keyService.loadPublicKey(transaction.from())))
+                return new ServerResponse(clientReqId, false, "Invalid transaction.");
             TransactionResult result = node.submitOnChainTransaction(transaction);
             return new ServerResponse(clientReqId, result.isSuccess(), result.message());
         } catch (Exception e) {

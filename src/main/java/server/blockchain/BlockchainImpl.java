@@ -12,7 +12,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-public class BlockchainImpl implements Blockchain {
+public class BlockchainImpl implements Blockchain { // TODO: Persist blockchain
     private static final Logger logger = org.slf4j.LoggerFactory.getLogger(BlockchainImpl.class);
     private final List<Block> blockchain;
     private final KeyService keyService;

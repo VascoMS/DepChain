@@ -2,6 +2,7 @@ package server.evm.core;
 
 import com.google.gson.*;
 import common.model.Transaction;
+import common.model.TransactionKey;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.units.bigints.UInt256;
@@ -17,7 +18,6 @@ import org.hyperledger.besu.evm.tracing.StandardJsonTracer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.evm.model.TransactionResult;
-import util.SecurityUtil;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -35,15 +35,18 @@ public class ExecutionEngineImpl implements ExecutionEngine {
     private final EVMExecutor evmExecutor;
     private final ByteArrayOutputStream executionOutputStream;
 
-    private final ConcurrentHashMap<String, CompletableFuture<TransactionResult>> transactionFutures;
+    private final ConcurrentHashMap<TransactionKey, CompletableFuture<TransactionResult>> transactionFutures;
 
     private final Set<String> readFunctionIdentifiers;
 
     public ExecutionEngineImpl() {
+        logger.info("Initializing ExecutionEngine with Cancun EVM spec");
         this.state = new SimpleWorld();
 
         this.evmExecutor = EVMExecutor.evm(EvmSpecVersion.CANCUN);
         readFunctionIdentifiers = Set.of("70a08231", "313ce567", "06fdde03", "95d89b41", "18160ddd");
+        logger.debug("Configured read function identifiers: {}", readFunctionIdentifiers);
+
         this.executionOutputStream = new ByteArrayOutputStream();
         this.transactionFutures = new ConcurrentHashMap<>();
         PrintStream printStream = new PrintStream(executionOutputStream);
@@ -51,18 +54,22 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         evmExecutor.tracer(tracer);
         evmExecutor.worldUpdater(state.updater());
         evmExecutor.commitWorldState();
+        logger.info("ExecutionEngine initialized successfully");
     }
 
     public void initState(JsonObject state) {
+        logger.info("Initializing state from JSON object with {} accounts", state.keySet().size());
         parseAndApplyState(state);
+        logger.info("State initialization completed");
     }
 
     private void parseAndApplyState(JsonObject json) {
         for (String address : json.keySet()) {
             try {
+                logger.debug("Processing account state for address: {}", address);
                 processAccountState(address, json.getAsJsonObject(address));
             } catch (Exception e) {
-                logger.error("Error processing account for address {}", address, e);
+                logger.error("Error processing account for address {}: {}", address, e.getMessage(), e);
             }
         }
     }
@@ -71,6 +78,7 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         Address accountAddress = Address.fromHexString(addressHex);
 
         int balance = extractBalance(accountJson);
+        logger.debug("Setting balance for account {}: {} ETH", addressHex, balance);
 
         state.createAccount(accountAddress, BASE_NONCE, Wei.fromEth(balance));
 
@@ -79,6 +87,7 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         extractAndSetCode(accountJson, account);
 
         extractAndSetStorage(accountJson, account);
+        logger.debug("Account state processing completed for: {}", addressHex);
     }
 
     private int extractBalance(JsonObject accountJson) {
@@ -90,6 +99,7 @@ public class ExecutionEngineImpl implements ExecutionEngine {
     private void extractAndSetCode(JsonObject accountJson, MutableAccount account) {
         if (accountJson.has("code")) {
             String code = accountJson.get("code").getAsString();
+            logger.debug("Setting code for account {}", account.getAddress().toHexString());
             account.setCode(Bytes.fromHexString(code));
         }
     }
@@ -97,102 +107,178 @@ public class ExecutionEngineImpl implements ExecutionEngine {
     private void extractAndSetStorage(JsonObject accountJson, MutableAccount account) {
         if (accountJson.has("storage")) {
             JsonObject storageJson = accountJson.getAsJsonObject("storage");
-
+            logger.debug("Setting {} storage slots for account", storageJson.keySet().size());
             for (String slotMapping : storageJson.keySet()) {
                 try {
                     UInt256 slot = UInt256.fromHexString(slotMapping);
-                    UInt256 value = parseStorageValue(storageJson.get(slotMapping));
+                    JsonElement slotValue = storageJson.get(slotMapping);
+                    UInt256 value = parseStorageValue(slotValue);
                     account.setStorageValue(slot, value);
                 } catch (Exception e) {
-                    logger.error("Error setting storage for slot {}", slotMapping, e);
+                    logger.error("Error setting storage for slot {}: {}", slotMapping, e.getMessage(), e);
                 }
             }
         }
     }
 
     private UInt256 parseStorageValue(JsonElement valueElement) {
-        if (valueElement.isJsonPrimitive()) {
-            if (valueElement.getAsJsonPrimitive().isNumber()) {
-                return UInt256.valueOf(valueElement.getAsLong());
-            } else if (valueElement.getAsJsonPrimitive().isString()) {
-                return UInt256.fromHexString(valueElement.getAsString());
-            }
+        if (valueElement.isJsonPrimitive() && valueElement.getAsJsonPrimitive().isString()) {
+            return UInt256.fromHexString(valueElement.getAsString());
         }
         throw new IllegalArgumentException("Unsupported storage value type");
     }
 
     public void executeTransactions(List<Transaction> transactions) {
+        logger.info("Executing batch of {} transactions", transactions.size());
         for (Transaction transaction : transactions) {
-            TransactionResult result = executeTransaction(transaction);
-            getTransactionFuture(transaction.id()).complete(result);
+            logger.debug("Processing transaction from: {} Nonce: {}", transaction.from(), transaction.nonce());
+            TransactionResult result = executeOnChain(transaction);
+            logger.debug("Transaction {} {} completed with status: {}", transaction.from(),transaction.nonce(), result.isSuccess() ? "SUCCESS" : "FAIL");
+            getTransactionFuture(transaction.from(), transaction.nonce()).complete(result);
         }
+        logger.info("Batch execution completed");
     }
 
-    public CompletableFuture<TransactionResult> getTransactionFuture(String transactionId) {
-        transactionFutures.putIfAbsent(transactionId, new CompletableFuture<>());
-        return transactionFutures.get(transactionId);
+    public CompletableFuture<TransactionResult> getTransactionFuture(String from, long nonce) {
+        TransactionKey transactionKey = new TransactionKey(from, nonce);
+        logger.debug("Getting future for transaction: {}", transactionKey);
+        transactionFutures.putIfAbsent(transactionKey, new CompletableFuture<>());
+        return transactionFutures.get(transactionKey);
     }
 
-    public TransactionResult performOffChainOperation(Transaction transaction){
+    public TransactionResult performOffChainOperation(Transaction transaction) {
+        logger.info("Performing off-chain operation for transaction: {} {}", transaction.from(), transaction.nonce());
         String callData = transaction.data();
-        if(callData == null) { // Null calldata corresponds to reading the DEPCOIN balance
+        if(!validateOffChainOperation(transaction)) {
+            return TransactionResult.fail("Invalid off-chain operation...");
+        }
+        if(callData == null) {
+            logger.debug("Null calldata - reading DEPCOIN balance for address: {}", transaction.from());
             String address = transaction.from();
             int balance = readNativeCurrencyBalance(address);
+            logger.info("DEPCOIN balance read for {}: {}", address, balance);
             return TransactionResult.success("DEPCOIN Balance for " + address + " : " + balance);
         }
-        if(!readFunctionIdentifiers.contains(callData.substring(0, 8))) {
-            return TransactionResult.fail("Invalid read function identifier");
+        logger.debug("Executing offchain read operation...");
+        return executeOffChain(transaction);
+    }
+
+    private boolean validateOffChainOperation(Transaction transaction) {
+        if(transaction == null) {
+            logger.warn("Null transaction received for off-chain operation");
+            return false;
+        } else if(transaction.value() != 0) {
+            logger.warn("Invalid value for off-chain operation: {}", transaction.value());
+            return false;
+        } else {
+            String functionId = transaction.data().substring(0, 8);
+            if(!readFunctionIdentifiers.contains(functionId)) {
+                logger.warn("Invalid function identifier for off-chain operation: {}", functionId);
+                return false;
+            }
         }
-        return executeTransaction(transaction);
+        return true;
     }
 
     private int readNativeCurrencyBalance(String address) {
+        logger.debug("Reading native currency balance for: {}", address);
         Account account = state.getAccount(Address.fromHexString(address));
-        return account != null
+        int balance = account != null
                 ? BigInteger.valueOf(account.getBalance().intValue()).divide(BigInteger.TEN.pow(18)).intValue()
                 : 0;
+        logger.debug("Native balance for {}: {}", address, balance);
+        return balance;
     }
 
-    private TransactionResult executeTransaction(Transaction transaction) {
-        logger.info("Executing transaction: {}", transaction);
+    public boolean validateTransactionNonce(Transaction transaction) {
+        Account sender = state.getAccount(Address.fromHexString(transaction.from()));
+        long currentStoredNonce = sender.getNonce();
+        return transaction.nonce() > currentStoredNonce;
+    }
+
+    private TransactionResult executeOffChain(Transaction transaction) {
+         return executeTransaction(transaction, false);
+    }
+    private TransactionResult executeOnChain(Transaction transaction) {
+        return executeTransaction(transaction, true);
+    }
+
+    private TransactionResult executeTransaction(Transaction transaction, boolean setNonce) {
+        logger.info("Executing transaction {} from: {} to: {}", transaction.nonce(), transaction.from(), transaction.to());
         Address sender = Address.fromHexString(transaction.from());
         Address receiver = Address.fromHexString(transaction.to());
-        Bytes callData = transaction.data() != null && !transaction.data().isEmpty()
-                ? Bytes.fromHexString(transaction.data())
-                : null;
-        Account contractAccount = state.getAccount(receiver);
-        if (contractAccount == null) {
-            return TransactionResult.fail("Contract account not found");
+
+        Bytes callData = null;
+        if (transaction.data() != null && !transaction.data().isEmpty()) {
+            callData = Bytes.fromHexString(transaction.data());
+            logger.debug("Transaction calldata: 0x{}", transaction.data());
+        } else {
+            logger.debug("Transaction has no calldata");
         }
-        Bytes code = contractAccount.getCode();
+
+        MutableAccount receiverAccount  = state.getAccount(receiver);
+        if (receiverAccount == null) {
+            logger.error("Receiver account not found at address: {}", receiver);
+            return TransactionResult.fail("Receiver account not found");
+        }
+
+        Bytes code = receiverAccount.getCode();
+
         evmExecutor.sender(sender);
         evmExecutor.receiver(receiver);
         evmExecutor.code(code);
         evmExecutor.messageFrameType(MessageFrame.Type.MESSAGE_CALL);
+
         if(callData != null) {
             evmExecutor.callData(callData);
         }
-        evmExecutor.ethValue(Wei.fromEth(transaction.value()));
+
+        if(setNonce && !validateTransactionNonce(transaction)) {
+            logger.warn("Invalid nonce for transaction: {} from: {}", transaction.nonce(), transaction.from());
+            return TransactionResult.fail("Invalid nonce");
+        }
+
+        Wei ethValue = Wei.fromEth(transaction.value());
+        logger.debug("Transaction value: {} ETH", transaction.value());
+        evmExecutor.ethValue(ethValue);
+
+        logger.debug("Starting EVM execution");
+        executionOutputStream.reset();
         evmExecutor.execute();
+        if(setNonce) {
+            MutableAccount senderAccount = state.getAccount(sender);
+            logger.debug("Setting nonce for sender: {}", transaction.nonce());
+            senderAccount.setNonce(transaction.nonce());
+        }
+        logger.debug("EVM execution completed");
 
         String error = getError(executionOutputStream);
         if(error != null) {
-            logger.info("Error executing transaction: {}", error);
+            logger.warn("Error executing transaction {} {}: {}", transaction.from(), transaction.nonce(), error);
             String errorMessage = parseError(error);
+            logger.info("Parsed error message: {}", errorMessage);
             return TransactionResult.fail(errorMessage);
         }
 
-        return TransactionResult.success(parseEvmOutput(executionOutputStream));
+        String result = parseEvmOutput(executionOutputStream);
+        logger.info("Transaction {} {} executed successfully with result: {}", transaction.from(), transaction.nonce(), result);
+        return TransactionResult.success(result);
     }
 
     public static String getError(ByteArrayOutputStream byteArrayOutputStream) {
-        String[] lines = byteArrayOutputStream.toString().split("\\r?\\n");
+        String output = byteArrayOutputStream.toString();
+        String[] lines = output.split("\\r?\\n");
+        if (lines.length == 0) {
+            return null;
+        }
+
         JsonObject jsonObject = JsonParser.parseString(lines[lines.length - 1]).getAsJsonObject();
         return jsonObject.get("error") != null ? jsonObject.get("error").getAsString() : null;
     }
 
     public static String parseError(String error) {
         String errorSignature = error.substring(0, 8);
+        logger.debug("Parsing error with signature: {}", errorSignature);
         return switch (errorSignature) {
             case "e450d38c" -> // ERC20InsufficientBalance(address,uint256,uint256)
                     "ERC20 Insufficient Balance for: " + extractParameter(error, 0) +
@@ -233,7 +319,13 @@ public class ExecutionEngineImpl implements ExecutionEngine {
     }
 
     private static String extractReturnData(ByteArrayOutputStream byteArrayOutputStream) {
-        String[] lines = byteArrayOutputStream.toString().split("\\r?\\n");
+        String output = byteArrayOutputStream.toString();
+        String[] lines = output.split("\\r?\\n");
+        if (lines.length == 0) {
+            logger.warn("No output lines found from EVM execution");
+            return "";
+        }
+
         JsonObject jsonObject = JsonParser.parseString(lines[lines.length - 1]).getAsJsonObject();
 
         String memory = jsonObject.get("memory").getAsString();
@@ -242,6 +334,7 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         int offset = Integer.decode(stack.get(stack.size() - 1).getAsString());
         int size = Integer.decode(stack.get(stack.size() - 2).getAsString());
 
+        logger.debug("Extracting return data from memory - offset: {}, size: {}", offset, size);
         return memory.substring(2 + offset * 2, 2 + offset * 2 + size * 2);
     }
 
@@ -251,20 +344,26 @@ public class ExecutionEngineImpl implements ExecutionEngine {
     }
 
     private static String parseEvmOutput(ByteArrayOutputStream byteArrayOutputStream) {
+        // TODO: Change since int returning functions that return 0 or 1 will be treated as boolean
         String returnData = extractReturnData(byteArrayOutputStream);
+        logger.debug("Parsing EVM output from return data: 0x{}", returnData);
 
         // Check if it's a boolean true
         if (returnData.equals("0000000000000000000000000000000000000000000000000000000000000001")) {
+            logger.debug("Return data recognized as boolean true");
             return ""; // Return nothing if it's true
         }
 
         // Check if it's a boolean false
         if (returnData.equals("0000000000000000000000000000000000000000000000000000000000000000")) {
+            logger.debug("Return data recognized as boolean false");
             return "false"; // or handle false case differently if needed
         }
 
         // Otherwise, treat it as an integer
-        return Integer.toString(Integer.decode("0x" + returnData));
+        int intValue = Integer.decode("0x" + returnData);
+        logger.debug("Return data interpreted as integer: {}", intValue);
+        return Integer.toString(intValue);
     }
 
     private static boolean extractBooleanFromReturnData(ByteArrayOutputStream byteArrayOutputStream) {
@@ -272,7 +371,8 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         // We'll check if the last byte is non-zero (true) or zero (false)
         String returnData = extractReturnData(byteArrayOutputStream);
         String lastByte = returnData.substring(returnData.length() - 2);
-        return !lastByte.equals("00");
+        boolean result = !lastByte.equals("00");
+        logger.debug("Extracted boolean value from return data: {}", result);
+        return result;
     }
-
 }

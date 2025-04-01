@@ -12,10 +12,8 @@ import server.consensus.core.primitives.ConsensusBroker;
 import server.evm.core.ExecutionEngine;
 import server.evm.core.ExecutionEngineImpl;
 import server.evm.model.TransactionResult;
-import util.KeyService;
-import util.Observer;
+import util.*;
 import util.Process;
-import util.SecurityUtil;
 
 import java.util.Arrays;
 
@@ -26,10 +24,11 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
     private final ConsensusBroker consensusBroker;
     private final ExecutionEngine executionEngine;
     private final AuthenticatedPerfectLink processLink;
-    public static final int MIN_BLOCK_SIZE = 2;
+    public static final int MIN_BLOCK_SIZE = 1;
+    public static final int BLOCK_TIME = 6000;
     public static final String GENESIS_BLOCK_PATH = "src/main/java/server/blockchain/resources/genesis.json";
 
-    public Node(int basePort, String myId, Process[] processes, int blockTime, KeyService keyService) throws Exception {
+    public Node(int basePort, String myId, Process[] processes, KeyService keyService) throws Exception {
         this.myProcess = new Process(myId, "localhost", basePort + Integer.parseInt(myId.substring(1)));
         Process[] peers = Arrays.stream(processes).filter(process -> !process.getId().equals(myId)).toArray(Process[]::new);
         this.executionEngine = new ExecutionEngineImpl();
@@ -41,7 +40,7 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
         // Consensus Module
         this.consensusBroker = new ConsensusBroker(
                 myProcess, peers, processLink, calculateByzantineFailures(peers.length + 1),
-                keyService, blockchain, blockTime, MIN_BLOCK_SIZE);
+                keyService, blockchain, BLOCK_TIME, MIN_BLOCK_SIZE);
     }
 
     public void bootstrap(String genesisBlockPath) {
@@ -53,10 +52,10 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
     }
 
     public TransactionResult submitOnChainTransaction(Transaction transaction) throws Exception{
-        logger.info("{}: Queueing transaction {} for consensus.", myProcess.getId(), transaction.id());
+        logger.info("{}: Queueing transaction {} {} for consensus.", myProcess.getId(), transaction.from(), transaction.nonce());
         consensusBroker.addClientRequest(transaction);
         try {
-            return executionEngine.getTransactionFuture(transaction.id()).get();
+            return executionEngine.getTransactionFuture(transaction.from(), transaction.nonce()).get();
         } catch(Exception e) {
             logger.error("{}: Request handling interrupted: {}", myProcess.getId(), e.getMessage(), e);
             throw e;
@@ -72,7 +71,7 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
         bootstrap(GENESIS_BLOCK_PATH);
         System.out.println("Node " + myProcess.getId() + " started.");
         consensusBroker.addObserver(this);
-        processLink.start();
+        consensusBroker.start();
     }
 
     public void waitForTermination() {
@@ -81,7 +80,7 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
 
     @Override
     public void update(ConsensusOutcomeDto message) {
-        if(message.decision() != null) {
+        if(message.decision() != null) { // Node is responsible for adding the block to the blockchain
             blockchain.addBlock(message.decision());
         }
     }

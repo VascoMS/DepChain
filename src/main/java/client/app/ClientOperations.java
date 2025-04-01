@@ -7,10 +7,8 @@ import common.primitives.LinkType;
 import common.util.Addresses;
 import lombok.Getter;
 import server.consensus.exception.LinkException;
-import util.KeyService;
-import util.Observer;
+import util.*;
 import util.Process;
-import util.SecurityUtil;
 
 import java.security.PrivateKey;
 import java.util.ArrayList;
@@ -22,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import java.math.BigInteger;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static client.app.TokenType.ISTCOIN;
 import static client.app.TokenType.DEPCOIN;
@@ -38,6 +37,7 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
     private final String[] serverIds = {"p0", "p1", "p2", "p3"}; // Known servers
     private final int byzantineFailures = (serverIds.length - 1) / 3;
     private final String contractAddress;
+    private final AtomicLong nonceCounter;
 
     @Getter
     public enum Operations {
@@ -65,10 +65,12 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
         this.receivedResponses = new ConcurrentHashMap<>();
         this.requestMap = new ConcurrentHashMap<>();
         this.contractAddress = Addresses.ISTCOIN_ADDRESS;
+        this.nonceCounter = new AtomicLong(0);
         link.addObserver(this);
+        link.start();
     }
 
-    public int balance(TokenType tokenType) throws Exception {
+    public Integer balance(TokenType tokenType) throws Exception {
         String id = UUID.randomUUID().toString();
         String calldata = tokenType.equals(ISTCOIN)
                 ? Operations.BALANCE.callDataPrefix + padHexStringTo256Bit(myId)
@@ -77,10 +79,9 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
         ClientRequest request = new ClientRequest(
                 id,
                 TransactionType.OFFCHAIN,
-                createTransaction(
+                createOffChainTransaction(
                         receiver,
-                        calldata,
-                        0
+                        calldata
                 )
         );
         CompletableFuture<ServerResponse> future = sendToServers(request);
@@ -90,7 +91,7 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
             return Integer.parseInt(result.payload());
         } else {
             System.out.println("Request fail.");
-            return -1;
+            return null;
         }
     }
 
@@ -106,7 +107,7 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
         ClientRequest request = new ClientRequest(
                 id,
                 TransactionType.ONCHAIN,
-                createTransaction(
+                createOnChainTransaction(
                         receiver,
                         calldata,
                         baseCurrencyValue
@@ -127,7 +128,7 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
         ClientRequest request = new ClientRequest(
                 id,
                 TransactionType.ONCHAIN,
-                createTransaction(
+                createOnChainTransaction(
                         contractAddress,
                         Operations.ADD_TO_BLACKLIST.callDataPrefix +
                                 padHexStringTo256Bit(address),
@@ -149,7 +150,7 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
         ClientRequest request = new ClientRequest(
                 id,
                 TransactionType.ONCHAIN,
-                createTransaction(
+                createOnChainTransaction(
                         contractAddress,
                         Operations.REMOVE_FROM_BLACKLIST.callDataPrefix +
                                 padHexStringTo256Bit(address),
@@ -196,11 +197,17 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
         return future;
     }
 
-    private Transaction createTransaction(String receiver, String calldata, int value) throws Exception {
-        String id = UUID.randomUUID().toString();
+    private Transaction createOnChainTransaction(String receiver, String calldata, int value) throws Exception {
+        long currentNonce = nonceCounter.getAndIncrement();
         PrivateKey privateKey = keyService.loadPrivateKey(myId);
-        String signature = SecurityUtil.signTransaction(id, myId, receiver, calldata, value, privateKey);
-        return new Transaction(id, myId, receiver, calldata, value, signature); //
+        String signature = SecurityUtil.signTransaction(myId, receiver, currentNonce, calldata, value, privateKey);
+        return new Transaction(myId, receiver, currentNonce, calldata, value, signature);
+    }
+
+    private Transaction createOffChainTransaction(String receiver, String calldata) throws Exception {
+        PrivateKey privateKey = keyService.loadPrivateKey(myId);
+        String signature = SecurityUtil.signTransaction(myId, receiver, -1, calldata, 0, privateKey);
+        return new Transaction(myId, receiver, -1, calldata, 0, signature);
     }
 
     private static String convertIntegerToHex256Bit(int number) {
@@ -246,6 +253,8 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
             future.complete(new ServerResponse(response.requestId(), false, null));
         }
     }
+
+
 
     @Override
     public void close() throws Exception {

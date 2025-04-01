@@ -27,13 +27,12 @@ public class Server {
         int basePort = Integer.parseInt(args[0]);
         String myId = args[1];
         int clientBasePort = Integer.parseInt(args[2]);
-        int blockTime = 6000;
-            Process[] processes = {
-                    new Process("p0", "localhost", basePort),
-                    new Process("p1", "localhost", basePort + 1),
-                    new Process("p2", "localhost", basePort + 2),
-                    new Process("p3", "localhost", basePort + 3)
-            };
+        Process[] processes = {
+                new Process("p0", "localhost", basePort),
+                new Process("p1", "localhost", basePort + 1),
+                new Process("p2", "localhost", basePort + 2),
+                new Process("p3", "localhost", basePort + 3)
+        };
         Process[] clients = {
                 new Process("deaddeaddeaddeaddeaddeaddeaddeaddeaddead", "localhost", clientBasePort),
                 new Process("beefbeefbeefbeefbeefbeefbeefbeefbeefbeef", "localhost", clientBasePort + 1)
@@ -46,9 +45,10 @@ public class Server {
         Process myProcess = myProcessOptional.get();
         try {
             KeyService keyService = new KeyService(SecurityUtil.SERVER_KEYSTORE_PATH, "mypass");
-            Node node = new Node(basePort, myId, processes, blockTime, keyService);
+            Node node = new Node(basePort, myId, processes, keyService);
             ClientRequestBroker broker = new ClientRequestBroker(myProcess, clients, node, keyService);
             broker.start();
+            broker.waitForTermination();
         } catch(Exception e) {
             throw new RuntimeException(e);
         }

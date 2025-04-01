@@ -8,17 +8,14 @@ import common.primitives.LinkType;
 import org.junit.jupiter.api.*;
 import org.mockito.Mock;
 import org.mockito.Mockito;
-import server.app.Node;
 import server.blockchain.Blockchain;
 import server.blockchain.model.Block;
-import server.blockchain.BlockchainImpl;
 import server.consensus.core.model.ConsensusOutcomeDto;
 import server.consensus.core.model.ConsensusPayload;
 import server.consensus.core.model.WritePair;
 import server.consensus.core.model.WriteState;
 import server.consensus.core.primitives.ConsensusBroker;
 import server.consensus.test.ConsensusByzantineMode;
-import server.evm.core.ExecutionEngine;
 import util.KeyService;
 import util.Observer;
 import util.Process;
@@ -26,9 +23,9 @@ import util.SecurityUtil;
 
 import java.util.HashMap;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -59,13 +56,12 @@ public class ConsensusTest {
     private static ConsensusBroker carlBroker;
     private static ConsensusBroker jeffBroker;
 
+    private static final AtomicLong nonce = new AtomicLong(0);
+
     private static KeyService serverKeyService;
     private static KeyService clientKeyService;
 
     private static final int blockTime = 3000;
-
-    private static final String privateKeyPrefix = "p";
-
 
     @BeforeAll
     public static void startLinks() throws Exception {
@@ -508,10 +504,10 @@ public class ConsensusTest {
     }
 
     private Transaction generateTransaction(String content) throws Exception {
-        String transactionId = UUID.randomUUID().toString();
         String clientId = "deaddeaddeaddeaddeaddeaddeaddeaddeaddead";
-        String signature = SecurityUtil.signTransaction(transactionId, clientId, content, 0, clientKeyService.loadPrivateKey(clientId));
-        return new Transaction(transactionId, clientId, clientId + 1, content, 0, signature);
+        long nonce = ConsensusTest.nonce.incrementAndGet();
+        String signature = SecurityUtil.signTransaction(clientId, clientId + 1, nonce, content, 0, clientKeyService.loadPrivateKey(clientId));
+        return new Transaction(clientId, clientId + 1, nonce, content, 0, signature);
     }
 
     @AfterEach
