@@ -45,7 +45,7 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
     public enum Operations {
 
         BALANCE("70a08231"),
-        TRANSFER("23b872dd"),
+        TRANSFER("a9059cbb"),
         ADD_TO_BLACKLIST("44337ea1"),
         REMOVE_FROM_BLACKLIST("537df3b6");
 

@@ -51,7 +51,7 @@ public class Main {
 
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
         PrintStream printStream = new PrintStream(byteArrayOutputStream);
-        StandardJsonTracer tracer = new StandardJsonTracer(printStream, true, true, true, true);
+        StandardJsonTracer tracer = new StandardJsonTracer(System.out, true, true, true, true);
 
         var executor = EVMExecutor.evm(EvmSpecVersion.CANCUN);
         executor.tracer(tracer);

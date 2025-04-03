@@ -18,6 +18,7 @@ import org.hyperledger.besu.evm.tracing.StandardJsonTracer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.evm.model.TransactionResult;
+import server.evm.util.EvmMetadataUtils;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -162,7 +163,7 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         if(callData == null) {
             logger.debug("Null calldata - reading DEPCOIN balance for address: {}", transaction.from());
             String address = transaction.from();
-            int balance = readNativeCurrencyBalance(address);
+            long balance = readNativeCurrencyBalance(address);
             logger.info("DEPCOIN balance read for {}: {}", address, balance);
             return TransactionResult.success(String.valueOf(balance));
         }
@@ -187,11 +188,11 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         return true;
     }
 
-    private int readNativeCurrencyBalance(String address) {
+    private long readNativeCurrencyBalance(String address) {
         logger.debug("Reading native currency balance for: {}", address);
         Account account = state.getAccount(Address.fromHexString(address));
-        int balance = account != null
-                ? BigInteger.valueOf(account.getBalance().intValue()).divide(BigInteger.TEN.pow(18)).intValue()
+        long balance = account != null
+                ? account.getBalance().getAsBigInteger().divide(BigInteger.TEN.pow(18)).longValue()
                 : 0;
         logger.debug("Native balance for {}: {}", address, balance);
         return balance;
@@ -253,7 +254,6 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         TransactionResult result;
         try {
             evmExecutor.worldUpdater(state.updater());
-            logger.info("Will execute transactions: {}", transaction);
             evmExecutor.execute();
             MutableAccount senderAccount = state.getAccount(sender);
             logger.info("Sender account nonce updated to: {}", senderAccount.getNonce());
@@ -295,14 +295,13 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         }
 
         JsonObject jsonObject = JsonParser.parseString(lines[lines.length - 1]).getAsJsonObject();
-        String error = jsonObject.get("error") != null ? jsonObject.get("error").getAsString() : null;
-        if(error != null) {
-            System.out.println("Error found muthufuka: " + error);
-        }
-        return error;
+        return jsonObject.get("error") != null ? jsonObject.get("error").getAsString() : null;
     }
 
     public static String parseError(String error) {
+        if (error == null || error.length() < 10) {
+            return "Unknown error";
+        }
         String errorSignature = error.substring(2, 10);
         logger.debug("Parsing error with signature: {}", errorSignature);
         return switch (errorSignature) {
@@ -369,27 +368,20 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         return Integer.decode("0x" + returnData);
     }
 
-    private static String parseEvmOutput(ByteArrayOutputStream byteArrayOutputStream) {
-        // TODO: Change since int returning functions that return 0 or 1 will be treated as boolean
+    private static String parseEvmOutput(ByteArrayOutputStream byteArrayOutputStream, String calldata) {
         String returnData = extractReturnData(byteArrayOutputStream);
         logger.debug("Parsing EVM output from return data: 0x{}", returnData);
-
-        // Check if it's a boolean true
-        if (returnData.equals("0000000000000000000000000000000000000000000000000000000000000001")) {
-            logger.debug("Return data recognized as boolean true");
-            return ""; // Return nothing if it's true
+        String returnType = EvmMetadataUtils.getMethodReturnType(calldata);
+        if (returnType.equals("bool")) {
+            boolean result = extractBooleanFromReturnData(byteArrayOutputStream);
+            logger.debug("Return data interpreted as boolean: {}", result);
+            return Boolean.toString(result);
+        } else {
+            int intValue = extractIntegerFromReturnData(byteArrayOutputStream);
+            logger.debug("Return data interpreted as integer: {}", intValue);
+            return Integer.toString(intValue);
         }
 
-        // Check if it's a boolean false
-        if (returnData.equals("0000000000000000000000000000000000000000000000000000000000000000")) {
-            logger.debug("Return data recognized as boolean false");
-            return "false"; // or handle false case differently if needed
-        }
-
-        // Otherwise, treat it as an integer
-        int intValue = Integer.decode("0x" + trimLeadingZeros(returnData));
-        logger.debug("Return data interpreted as integer: {}", intValue);
-        return Integer.toString(intValue);
     }
 
     private static boolean extractBooleanFromReturnData(ByteArrayOutputStream byteArrayOutputStream) {

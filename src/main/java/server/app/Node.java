@@ -26,7 +26,7 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
     private final ExecutionEngine executionEngine;
     private final AuthenticatedPerfectLink processLink;
     private final KeyService keyService;
-    public static final int MIN_BLOCK_SIZE = 1;
+    public static final int MIN_BLOCK_SIZE = 4;
     public static final int BLOCK_TIME = 6000;
     public static final String GENESIS_BLOCK_PATH = "src/main/java/server/blockchain/resources/genesis.json";
 
@@ -80,7 +80,7 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
 
     public void start() {
         bootstrap(GENESIS_BLOCK_PATH);
-        System.out.println("Node " + myProcess.getId() + " started.");
+        logger.info("Node {} started.", myProcess.getId());
         consensusBroker.addObserver(this);
         consensusBroker.start();
     }

@@ -322,9 +322,9 @@ public class DepChainTest {
             while(duration > System.currentTimeMillis() - startTime) {
                 TestClientOp op = randomOp();
 
-                if(failures.isEmpty())
+                if(!failures.isEmpty())
                     break;
-                if(errors.isEmpty())
+                if(!errors.isEmpty())
                     break;
 
                 clientExecutor.submit(() -> op.doOperation(client, transferRecipient, failures, errors));

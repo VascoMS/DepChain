@@ -23,15 +23,15 @@ public class MerkleTree {
         }
         ArrayList<String> parentHashList=new ArrayList<>();
         //Hash the leaf transaction pair to get parent transaction
-        for(int i=0; i<hashList.size(); i+=2){
-            String hashedString = getSHA(hashList.get(i).concat(hashList.get(i+1)));
-            parentHashList.add(hashedString);
-        }
-        // If odd number of transactions , add the last transaction again
-        if(hashList.size() % 2 == 1){
-            String lastHash=hashList.get(hashList.size()-1);
-            String hashedString = getSHA(lastHash.concat(lastHash));
-            parentHashList.add(hashedString);
+        for(int i = 0; i < hashList.size(); i += 2) {
+            if(i == hashList.size() - 1) {
+                String lastHash= hashList.get(hashList.size()-1);
+                String hashedString = getSHA(lastHash.concat(lastHash));
+                parentHashList.add(hashedString);
+            } else {
+                String hashedString = getSHA(hashList.get(i).concat(hashList.get(i+1)));
+                parentHashList.add(hashedString);
+            }
         }
         return merkleTree(parentHashList);
     }
