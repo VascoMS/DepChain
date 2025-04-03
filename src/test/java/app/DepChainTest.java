@@ -44,8 +44,6 @@ public class DepChainTest {
     private static final KeyService SERVER_KEY_SERVICE;
     private static final KeyService CLIENT_KEY_SERVICE;
 
-    private static final AtomicLong nonce = new AtomicLong(1000);
-
     private final List<TestClientOp> clientOps = List.of(this::balanceAndSend, this::spoofRecipient, this::offChainAttempt);
 
     static {
@@ -100,7 +98,8 @@ public class DepChainTest {
     private ClientRequest createSpoofedRequest(String actualSenderId, String spoofedSenderId) throws Exception {
         PrivateKey privateKey = CLIENT_KEY_SERVICE.loadPrivateKey(actualSenderId);
 
-        long currentNonce = nonce.getAndIncrement();
+        ClientOperations client = actualSenderId.equals(alice.getId()) ? aliceClient : bobClient;
+        long currentNonce = client.getAndIncrementNonce();
         String signature = SecurityUtil.signTransaction(spoofedSenderId, actualSenderId, currentNonce, null, 1, privateKey);
 
         Transaction transaction = new Transaction(
@@ -118,7 +117,8 @@ public class DepChainTest {
     private ClientRequest createOffChainTransferRequest(String senderId, String recipientId, int amount) throws Exception {
         PrivateKey privateKey = CLIENT_KEY_SERVICE.loadPrivateKey(senderId);
 
-        long currentNonce = nonce.getAndIncrement();
+        ClientOperations client = senderId.equals(alice.getId()) ? aliceClient : bobClient;
+        long currentNonce = client.getAndIncrementNonce();
         String signature = SecurityUtil.signTransaction(
                 senderId,
                 recipientId,
@@ -155,7 +155,7 @@ public class DepChainTest {
         KeyService clientKeyService = new KeyService(SecurityUtil.CLIENT_KEYSTORE_PATH,  "mypass");
         PrivateKey privateKey = clientKeyService.loadPrivateKey(alice.getId());
 
-        long currentNonce = nonce.getAndIncrement();
+        long currentNonce = aliceClient.getAndIncrementNonce();
         String signature = SecurityUtil.signTransaction(alice.getId(), bob.getId(), currentNonce, null, 1, privateKey);
 
         Transaction depcoinTransferCall = new Transaction(
@@ -167,7 +167,7 @@ public class DepChainTest {
                 signature
         );
 
-        ClientRequest clientRequest = new ClientRequest(alice.getId(), TransactionType.OFFCHAIN, depcoinTransferCall);
+        ClientRequest clientRequest = new ClientRequest(alice.getId(), TransactionType.ONCHAIN, depcoinTransferCall);
 
         // Act
         ServerResponse response = aliceClient.sendRequest(clientRequest);
@@ -217,7 +217,7 @@ public class DepChainTest {
         int amountSent = 1;
 
         // Act
-        aliceClient.transfer(bob.getId(), amountSent, TokenType.ISTCOIN);
+        assertTrue(aliceClient.transfer(bob.getId(), amountSent, TokenType.ISTCOIN));
 
         // Assert
         int newAliceBalance = aliceClient.balance(TokenType.ISTCOIN);
@@ -225,6 +225,16 @@ public class DepChainTest {
 
         assertEquals(oldAliceBalance - amountSent, newAliceBalance);
         assertEquals(oldBobBalance + amountSent, newBobBalance);
+    }
+
+    @Test
+    public void transferWithoutFunds() throws Exception {
+        // Assemble
+        // Act
+        boolean result = bobClient.transfer(alice.getId(), 1000, TokenType.ISTCOIN);
+
+        // Assert
+        assertFalse(result);
     }
 
     @Test

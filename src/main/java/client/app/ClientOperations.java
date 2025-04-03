@@ -20,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import java.math.BigInteger;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static client.app.TokenType.ISTCOIN;
@@ -38,6 +39,7 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
     private final int byzantineFailures = (serverIds.length - 1) / 3;
     private final String contractAddress;
     private final AtomicLong nonceCounter;
+    private static final int TIMEOUT = 10000; // 10 seconds
 
     @Getter
     public enum Operations {
@@ -65,7 +67,7 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
         this.receivedResponses = new ConcurrentHashMap<>();
         this.requestMap = new ConcurrentHashMap<>();
         this.contractAddress = Addresses.ISTCOIN_ADDRESS;
-        this.nonceCounter = new AtomicLong(0);
+        this.nonceCounter = new AtomicLong(1);
         link.addObserver(this);
         link.start();
     }
@@ -103,7 +105,7 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
                 convertIntegerToHex256Bit(value)
                 : null;
         String receiver = tokenType.equals(DEPCOIN) ? recipientAddress : contractAddress;
-        int baseCurrencyValue = tokenType.equals(DEPCOIN) ? 0 : value;
+        int baseCurrencyValue = tokenType.equals(ISTCOIN) ? 0 : value;
         ClientRequest request = new ClientRequest(
                 id,
                 TransactionType.ONCHAIN,
@@ -118,7 +120,7 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
         if(result.success()) {
             System.out.println("Transfer success!");
         } else {
-            System.out.println("Transfer fail.");
+            System.out.println("Transfer fail. Message: " + result.payload());
         }
         return result.success();
     }
@@ -178,11 +180,15 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
         return result;
     }
 
+    public long getAndIncrementNonce() {
+        return nonceCounter.getAndIncrement();
+    }
+
     private CompletableFuture<ServerResponse> sendToServers(ClientRequest clientRequest) throws LinkException {
 
         CompletableFuture<ServerResponse> future = new CompletableFuture<ServerResponse>()
                 .completeOnTimeout(ServerResponse.timeout(
-                        clientRequest.id()), 1000L, TimeUnit.MILLISECONDS
+                        clientRequest.id()), TIMEOUT, TimeUnit.MILLISECONDS
                 );
         requestMap.put(clientRequest.id(), future);
         receivedResponses.put(clientRequest.id(), new ArrayList<>());

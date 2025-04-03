@@ -52,7 +52,6 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         PrintStream printStream = new PrintStream(executionOutputStream);
         StandardJsonTracer tracer = new StandardJsonTracer(printStream, true, true, true, true);
         evmExecutor.tracer(tracer);
-        evmExecutor.worldUpdater(state.updater());
         evmExecutor.commitWorldState();
         logger.info("ExecutionEngine initialized successfully");
     }
@@ -139,11 +138,19 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         logger.info("Batch execution completed");
     }
 
-    public CompletableFuture<TransactionResult> getTransactionFuture(String from, long nonce) {
+    private CompletableFuture<TransactionResult> getTransactionFuture(String from, long nonce) {
         TransactionKey transactionKey = new TransactionKey(from, nonce);
         logger.debug("Getting future for transaction: {}", transactionKey);
         transactionFutures.putIfAbsent(transactionKey, new CompletableFuture<>());
         return transactionFutures.get(transactionKey);
+    }
+
+    public TransactionResult getTransactionResult(String from, long nonce) throws Exception {
+        TransactionKey transactionKey = new TransactionKey(from, nonce);
+        CompletableFuture<TransactionResult> future = getTransactionFuture(from, nonce);
+        TransactionResult result = future.get();
+        transactionFutures.remove(transactionKey);
+        return result;
     }
 
     public TransactionResult performOffChainOperation(Transaction transaction) {
@@ -157,7 +164,7 @@ public class ExecutionEngineImpl implements ExecutionEngine {
             String address = transaction.from();
             int balance = readNativeCurrencyBalance(address);
             logger.info("DEPCOIN balance read for {}: {}", address, balance);
-            return TransactionResult.success("DEPCOIN Balance for " + address + " : " + balance);
+            return TransactionResult.success(String.valueOf(balance));
         }
         logger.debug("Executing offchain read operation...");
         return executeOffChain(transaction);
@@ -170,7 +177,7 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         } else if(transaction.value() != 0) {
             logger.warn("Invalid value for off-chain operation: {}", transaction.value());
             return false;
-        } else {
+        } else if(transaction.data() != null) {
             String functionId = transaction.data().substring(0, 8);
             if(!readFunctionIdentifiers.contains(functionId)) {
                 logger.warn("Invalid function identifier for off-chain operation: {}", functionId);
@@ -239,30 +246,45 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         }
 
         Wei ethValue = Wei.fromEth(transaction.value());
-        logger.debug("Transaction value: {} ETH", transaction.value());
+        logger.debug("Transaction value: {} DEP", transaction.value());
         evmExecutor.ethValue(ethValue);
-
         logger.debug("Starting EVM execution");
         executionOutputStream.reset();
-        evmExecutor.execute();
-        if(setNonce) {
+        TransactionResult result;
+        try {
+            evmExecutor.worldUpdater(state.updater());
+            logger.info("Will execute transactions: {}", transaction);
+            evmExecutor.execute();
             MutableAccount senderAccount = state.getAccount(sender);
-            logger.debug("Setting nonce for sender: {}", transaction.nonce());
-            senderAccount.setNonce(transaction.nonce());
+            logger.info("Sender account nonce updated to: {}", senderAccount.getNonce());
+            logger.debug("EVM execution completed");
+            if(isContract(receiverAccount)) {
+                String error = getError(executionOutputStream);
+                if (error != null) {
+                    logger.warn("Error executing transaction {} {}: {}", transaction.from(), transaction.nonce(), error);
+                    String errorMessage = parseError(error);
+                    logger.info("Parsed error message: {}", errorMessage);
+                    result = TransactionResult.fail(errorMessage);
+                } else {
+                    String resultOutput = parseEvmOutput(executionOutputStream, transaction.data());
+                    logger.info("Transaction {} {} executed successfully with result: {}", transaction.from(), transaction.nonce(), resultOutput);
+                    result = TransactionResult.success(resultOutput);
+                }
+            } else {
+                result = TransactionResult.success("DEP Transfer executed successfully");
+            }
+        } catch (IllegalStateException e) {
+            logger.warn("EVM execution failed: {}", e.getMessage(), e);
+            result = TransactionResult.fail("Insufficient balance.");
+        } finally {
+            if(setNonce) {
+                MutableAccount senderAccount = state.getAccount(sender);
+                logger.debug("Sender previous nonce: {}", senderAccount.getNonce());
+                logger.debug("Setting nonce for sender: {}", transaction.nonce());
+                senderAccount.setNonce(transaction.nonce());
+            }
         }
-        logger.debug("EVM execution completed");
-
-        String error = getError(executionOutputStream);
-        if(error != null) {
-            logger.warn("Error executing transaction {} {}: {}", transaction.from(), transaction.nonce(), error);
-            String errorMessage = parseError(error);
-            logger.info("Parsed error message: {}", errorMessage);
-            return TransactionResult.fail(errorMessage);
-        }
-
-        String result = parseEvmOutput(executionOutputStream);
-        logger.info("Transaction {} {} executed successfully with result: {}", transaction.from(), transaction.nonce(), result);
-        return TransactionResult.success(result);
+        return result;
     }
 
     public static String getError(ByteArrayOutputStream byteArrayOutputStream) {
@@ -273,11 +295,15 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         }
 
         JsonObject jsonObject = JsonParser.parseString(lines[lines.length - 1]).getAsJsonObject();
-        return jsonObject.get("error") != null ? jsonObject.get("error").getAsString() : null;
+        String error = jsonObject.get("error") != null ? jsonObject.get("error").getAsString() : null;
+        if(error != null) {
+            System.out.println("Error found muthufuka: " + error);
+        }
+        return error;
     }
 
     public static String parseError(String error) {
-        String errorSignature = error.substring(0, 8);
+        String errorSignature = error.substring(2, 10);
         logger.debug("Parsing error with signature: {}", errorSignature);
         return switch (errorSignature) {
             case "e450d38c" -> // ERC20InsufficientBalance(address,uint256,uint256)
@@ -361,7 +387,7 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         }
 
         // Otherwise, treat it as an integer
-        int intValue = Integer.decode("0x" + returnData);
+        int intValue = Integer.decode("0x" + trimLeadingZeros(returnData));
         logger.debug("Return data interpreted as integer: {}", intValue);
         return Integer.toString(intValue);
     }
@@ -374,5 +400,9 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         boolean result = !lastByte.equals("00");
         logger.debug("Extracted boolean value from return data: {}", result);
         return result;
+    }
+
+    private boolean isContract(MutableAccount account) {
+        return account.getCode() != null && !account.getCode().isEmpty();
     }
 }

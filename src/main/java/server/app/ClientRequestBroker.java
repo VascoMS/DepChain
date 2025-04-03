@@ -77,6 +77,7 @@ public class ClientRequestBroker implements Observer<Message>, AutoCloseable {
             );
             link.send(senderId, response);
         } catch(Exception e) {
+            e.printStackTrace();
             logger.error("{}: Error in handling request from client: {}", myId, e.getMessage());
         }
     }
@@ -88,12 +89,10 @@ public class ClientRequestBroker implements Observer<Message>, AutoCloseable {
 
     private ServerResponse onChainTransaction(String clientReqId, Transaction transaction) {
         try {
-            if(!transaction.isValid(keyService.loadPublicKey(transaction.from())))
-                return new ServerResponse(clientReqId, false, "Invalid transaction.");
             TransactionResult result = node.submitOnChainTransaction(transaction);
             return new ServerResponse(clientReqId, result.isSuccess(), result.message());
         } catch (Exception e) {
-            logger.error("{}: Error in handling request from client: {}", myId, e.getMessage());
+            logger.error("{}: Error in handling request from client: {}", myId, e.getMessage(), e);
             return new ServerResponse(clientReqId, false, "Server Error");
         }
     }

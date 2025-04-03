@@ -9,7 +9,8 @@ import java.util.concurrent.CompletableFuture;
 
 public interface ExecutionEngine {
     void executeTransactions(List<Transaction> transactions);
-    CompletableFuture<TransactionResult> getTransactionFuture(String from, long nonce);
+    TransactionResult getTransactionResult(String from, long nonce) throws Exception;
     TransactionResult performOffChainOperation(Transaction transaction);
+    boolean validateTransactionNonce(Transaction transaction);
     void initState(JsonObject state);
 }

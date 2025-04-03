@@ -1,5 +1,6 @@
 package server.app;
 
+import common.model.ServerResponse;
 import common.model.Transaction;
 import common.primitives.AuthenticatedPerfectLink;
 import common.primitives.LinkType;
@@ -24,6 +25,7 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
     private final ConsensusBroker consensusBroker;
     private final ExecutionEngine executionEngine;
     private final AuthenticatedPerfectLink processLink;
+    private final KeyService keyService;
     public static final int MIN_BLOCK_SIZE = 1;
     public static final int BLOCK_TIME = 6000;
     public static final String GENESIS_BLOCK_PATH = "src/main/java/server/blockchain/resources/genesis.json";
@@ -32,6 +34,7 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
         this.myProcess = new Process(myId, "localhost", basePort + Integer.parseInt(myId.substring(1)));
         Process[] peers = Arrays.stream(processes).filter(process -> !process.getId().equals(myId)).toArray(Process[]::new);
         this.executionEngine = new ExecutionEngineImpl();
+        this.keyService = keyService;
         // Communication Links
         this.processLink = new AuthenticatedPerfectLink(
                 myProcess, peers, LinkType.SERVER_TO_SERVER, 100, SecurityUtil.SERVER_KEYSTORE_PATH);
@@ -53,13 +56,21 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
 
     public TransactionResult submitOnChainTransaction(Transaction transaction) throws Exception{
         logger.info("{}: Queueing transaction {} {} for consensus.", myProcess.getId(), transaction.from(), transaction.nonce());
+        if(!validateTransaction(transaction))
+            return TransactionResult.fail("Invalid transaction");
         consensusBroker.addClientRequest(transaction);
         try {
-            return executionEngine.getTransactionFuture(transaction.from(), transaction.nonce()).get();
+            return executionEngine.getTransactionResult(transaction.from(), transaction.nonce());
         } catch(Exception e) {
             logger.error("{}: Request handling interrupted: {}", myProcess.getId(), e.getMessage(), e);
             throw e;
         }
+    }
+
+    private boolean validateTransaction(Transaction transaction) throws Exception{
+        return transaction != null
+                && transaction.isValid(keyService.loadPublicKey(transaction.from()))
+                && executionEngine.validateTransactionNonce(transaction);
     }
 
     private static int calculateByzantineFailures(int numberOfProcesses) {

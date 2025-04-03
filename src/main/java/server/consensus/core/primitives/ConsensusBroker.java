@@ -177,7 +177,6 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
 
     public void addClientRequest(Transaction... transaction) {
         mempool.addAll(Arrays.stream(transaction).toList());
-        //clientRequests.notifyAll();
     }
 
     public void clearClientQueue() { mempool.clear(); }

@@ -50,17 +50,17 @@ public class BlockchainImpl implements Blockchain { // TODO: Persist blockchain
 
         Block lastBlock = blockchain.get(blockchain.size() - 1);
         String thisParentHash = block.getParentHash();
-        String lastParentHash = lastBlock.getParentHash();
+        String lastBlockHash = lastBlock.getBlockHash();
 
         // Validate parent hash
-        if (!thisParentHash.equals(lastParentHash)) {
+        if (!thisParentHash.equals(lastBlockHash)) {
             logger.warn("Invalid parent hash: expected {}, got {}",
-                    thisParentHash, lastParentHash);
+                    lastBlockHash, thisParentHash);
             return false;
         }
 
         // Validate timestamp
-        if (block.getTimestamp() > lastBlock.getTimestamp()) {
+        if (block.getTimestamp() <= lastBlock.getTimestamp()) {
             logger.warn("Invalid timestamp: block timestamp {} not greater than parent timestamp {}",
                     block.getTimestamp(), lastBlock.getTimestamp());
             return false;

@@ -16,6 +16,6 @@ public record Transaction(String from, String to, long nonce, String data, int v
         return validSignature;
     }
     public boolean isValid(PublicKey publicKey) throws Exception {
-        return (data == null || data.length() >= 8) && verifySignature(publicKey);
+        return from != null && signature != null && (data == null || data.length() >= 8) && verifySignature(publicKey);
     }
 }
