@@ -19,6 +19,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 import java.math.BigInteger;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -44,14 +45,39 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
     @Getter
     public enum Operations {
 
+        // Obtaining data operations
+        NAME("06fdde03"),
+        SYMBOL("95d89b41"),
+        DECIMALS("313ce567"),
+        OWNER("8da5cb5b"),
+        TOTAL_SUPPLY("18160ddd"),
+
+        // Financial operations
         BALANCE("70a08231"),
+        ALLOWANCE("dd62ed3e"),
         TRANSFER("a9059cbb"),
+        TRANSFER_FROM("23b872dd"),
+        APPROVE("095ea7b3"),
+
+        // Blacklist operations
         ADD_TO_BLACKLIST("44337ea1"),
-        REMOVE_FROM_BLACKLIST("537df3b6");
+        REMOVE_FROM_BLACKLIST("537df3b6"),
+        IS_BLACKLISTED("fe575a87"),
+
+        // Ownership operations
+        RENOUNCE_OWNERSHIP("715018a6"),
+        TRANSFER_OWNERSHIP("f2fde38b");
 
         private final String callDataPrefix;
 
         Operations(String callData) { this.callDataPrefix = callData; }
+
+        public boolean isDataOperation() {
+            List<Operations> dataOperations = List.of(
+                    NAME, SYMBOL, DECIMALS, OWNER, TOTAL_SUPPLY
+            );
+            return dataOperations.contains(this);
+        }
     }
 
     public ClientOperations(Process myProcess, Process[] serverProcesses)  throws Exception {
@@ -72,6 +98,34 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
         link.start();
     }
 
+    public String getData(Operations dataType) throws Exception {
+        if(!dataType.isDataOperation()) {
+            System.out.println("Invalid data type.");
+            return null;
+        }
+        String id = UUID.randomUUID().toString();
+        String calldata = dataType.callDataPrefix;
+
+        ClientRequest request = new ClientRequest(
+                id,
+                TransactionType.OFFCHAIN,
+                createOffChainTransaction(
+                        contractAddress,
+                        calldata
+                )
+        );
+
+        ServerResponse response = sendToServers(request);
+
+        if(response.success()) {
+            System.out.println("Request successful!");
+            return response.payload();
+        } else {
+            System.out.println("Request fail.");
+            return null;
+        }
+    }
+
     public Integer balance(TokenType tokenType) throws Exception {
         String id = UUID.randomUUID().toString();
         String calldata = tokenType.equals(ISTCOIN)
@@ -86,11 +140,35 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
                         calldata
                 )
         );
-        CompletableFuture<ServerResponse> future = sendToServers(request);
-        ServerResponse result = future.get();
-        if(result.success()) {
+        ServerResponse response = sendToServers(request);
+
+        if(response.success()) {
             System.out.println("Request successful!");
-            return Integer.parseInt(result.payload());
+            return Integer.parseInt(response.payload());
+        } else {
+            System.out.println("Request fail.");
+            return null;
+        }
+    }
+
+    public Integer allowance(String address) throws Exception {
+        String id = UUID.randomUUID().toString();
+        String calldata = Operations.ALLOWANCE.callDataPrefix +
+                padHexStringTo256Bit(myId) +
+                padHexStringTo256Bit(address) ;
+        ClientRequest request = new ClientRequest(
+                id,
+                TransactionType.OFFCHAIN,
+                createOffChainTransaction(
+                        contractAddress,
+                        calldata
+                )
+        );
+        ServerResponse response = sendToServers(request);
+
+        if(response.success()) {
+            System.out.println("Request successful!");
+            return Integer.parseInt(response.payload());
         } else {
             System.out.println("Request fail.");
             return null;
@@ -115,14 +193,81 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
                         baseCurrencyValue
                 )
         );
-        CompletableFuture<ServerResponse> future = sendToServers(request);
-        ServerResponse result = future.get();
-        if(result.success()) {
+        ServerResponse response = sendToServers(request);
+        if(response.success()) {
             System.out.println("Transfer success!");
         } else {
-            System.out.println("Transfer fail. Message: " + result.payload());
+            System.out.println("Transfer fail. Message: " + response.payload());
         }
-        return result.success();
+        return response.success();
+    }
+
+    public boolean transferFrom(String senderAddress, String recipientAddress, int value) throws Exception {
+        String id = UUID.randomUUID().toString();
+        String calldata = Operations.TRANSFER_FROM.callDataPrefix +
+                        padHexStringTo256Bit(senderAddress) +
+                        padHexStringTo256Bit(recipientAddress) +
+                        convertIntegerToHex256Bit(value);
+        ClientRequest request = new ClientRequest(
+                id,
+                TransactionType.ONCHAIN,
+                createOnChainTransaction(
+                        contractAddress,
+                        calldata,
+                        0
+                )
+        );
+        ServerResponse response = sendToServers(request);
+        if(response.success()) {
+            System.out.println("Transfer success!");
+        } else {
+            System.out.println("Transfer fail. Message: " + response.payload());
+        }
+        return response.success();
+    }
+
+    public boolean approve(String recipientAddress, int value) throws Exception {
+        String id = UUID.randomUUID().toString();
+        String calldata = Operations.APPROVE.callDataPrefix +
+                        padHexStringTo256Bit(recipientAddress) +
+                        convertIntegerToHex256Bit(value);
+        ClientRequest request = new ClientRequest(
+                id,
+                TransactionType.ONCHAIN,
+                createOnChainTransaction(
+                        contractAddress,
+                        calldata,
+                        0
+                )
+        );
+        ServerResponse response = sendToServers(request);
+        if(response.success()) {
+            System.out.println("Approval success!");
+        } else {
+            System.out.println("Approval fail. Message: " + response.payload());
+        }
+        return response.success();
+    }
+
+    public Boolean isBlacklisted() throws Exception {
+        String id = UUID.randomUUID().toString();
+        ClientRequest request = new ClientRequest(
+                id,
+                TransactionType.OFFCHAIN,
+                createOffChainTransaction(
+                        contractAddress,
+                        Operations.IS_BLACKLISTED.callDataPrefix +
+                                padHexStringTo256Bit(myId)
+                )
+        );
+        ServerResponse response = sendToServers(request);
+        if(response.success()) {
+            System.out.println("Address added to blacklist!");
+            return Boolean.valueOf(response.payload());
+        } else {
+            System.out.println("Add to blacklist failed.");
+            return null;
+        }
     }
 
     public boolean addToBlacklist(String address) throws Exception {
@@ -137,14 +282,13 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
                         0
                 )
         );
-        CompletableFuture<ServerResponse> future = sendToServers(request);
-        ServerResponse result = future.get();
-        if(result.success()) {
+        ServerResponse response = sendToServers(request);
+        if(response.success()) {
             System.out.println("Address added to blacklist!");
         } else {
             System.out.println("Add to blacklist failed.");
         }
-        return result.success();
+        return response.success();
     }
 
     public boolean removeFromBlacklist(String address) throws Exception {
@@ -159,33 +303,74 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
                         0
                 )
         );
-        CompletableFuture<ServerResponse> future = sendToServers(request);
-        ServerResponse result = future.get();
-        if(result.success()) {
+        ServerResponse response = sendToServers(request);
+
+        if(response.success()) {
             System.out.println("Address removed from blacklist!");
         } else {
             System.out.println("Remove from blacklist failed.");
         }
-        return result.success();
+        return response.success();
+    }
+
+    public boolean renounceOwnership() throws Exception {
+        String id = UUID.randomUUID().toString();
+        String calldata = Operations.RENOUNCE_OWNERSHIP.callDataPrefix;
+        ClientRequest request = new ClientRequest(
+                id,
+                TransactionType.ONCHAIN,
+                createOnChainTransaction(
+                        contractAddress,
+                        calldata,
+                        0
+                )
+        );
+        ServerResponse response = sendToServers(request);
+        if(response.success()) {
+            System.out.println("Ownership transfer success!");
+        } else {
+            System.out.println("Ownership transfer fail. Message: " + response.payload());
+        }
+        return response.success();
+    }
+
+    public boolean transferOwnership(String newOwnerAddress) throws Exception {
+        String id = UUID.randomUUID().toString();
+        String calldata = Operations.TRANSFER_OWNERSHIP.callDataPrefix +
+                padHexStringTo256Bit(newOwnerAddress);
+        ClientRequest request = new ClientRequest(
+                id,
+                TransactionType.ONCHAIN,
+                createOnChainTransaction(
+                        contractAddress,
+                        calldata,
+                        0
+                )
+        );
+        ServerResponse response = sendToServers(request);
+        if(response.success()) {
+            System.out.println("Ownership transfer success!");
+        } else {
+            System.out.println("Ownership transfer fail. Message: " + response.payload());
+        }
+        return response.success();
     }
 
     public ServerResponse sendRequest(ClientRequest clientRequest) throws Exception {
-        CompletableFuture<ServerResponse> future = sendToServers(clientRequest);
-        ServerResponse result = future.get();
-        if(result.success()) {
-            System.out.println("Success: " + result.payload());
+        ServerResponse response = sendToServers(clientRequest);
+        if(response.success()) {
+            System.out.println("Success: " + response.payload());
         } else {
-            System.out.println("Failed: " + result.payload());
+            System.out.println("Failed: " + response.payload());
         }
-        return result;
+        return response;
     }
 
     public long getAndIncrementNonce() {
         return nonceCounter.getAndIncrement();
     }
 
-    private CompletableFuture<ServerResponse> sendToServers(ClientRequest clientRequest) throws LinkException {
-
+    private ServerResponse sendToServers(ClientRequest clientRequest) throws Exception {
         CompletableFuture<ServerResponse> future = new CompletableFuture<ServerResponse>()
                 .completeOnTimeout(ServerResponse.timeout(
                         clientRequest.id()), TIMEOUT, TimeUnit.MILLISECONDS
@@ -200,7 +385,10 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
                     new Gson().toJson(clientRequest));
             link.send(serverId, message);
         }
-        return future;
+        ServerResponse response = future.get();
+        requestMap.remove(clientRequest.id());
+        receivedResponses.remove(clientRequest.id());
+        return response;
     }
 
     private Transaction createOnChainTransaction(String receiver, String calldata, int value) throws Exception {

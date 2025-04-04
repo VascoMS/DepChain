@@ -4,6 +4,8 @@ import common.model.ServerResponse;
 import common.model.Transaction;
 import common.primitives.AuthenticatedPerfectLink;
 import common.primitives.LinkType;
+import lombok.Getter;
+import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.blockchain.Blockchain;
@@ -27,7 +29,7 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
     private final ExecutionEngine executionEngine;
     private final AuthenticatedPerfectLink processLink;
     private final KeyService keyService;
-    public static final int MIN_BLOCK_SIZE = 4;
+    private final int minBlockSize = 1;
     public static final int BLOCK_TIME = 6000;
     public static final String GENESIS_BLOCK_PATH = "src/main/java/server/blockchain/resources/genesis.json";
 
@@ -40,11 +42,11 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
         this.processLink = new AuthenticatedPerfectLink(
                 myProcess, peers, LinkType.SERVER_TO_SERVER, 100, SecurityUtil.SERVER_KEYSTORE_PATH);
         // Blockchain Module
-        blockchain = new BlockchainImpl(keyService, executionEngine, MIN_BLOCK_SIZE);
+        blockchain = new BlockchainImpl(keyService, executionEngine, minBlockSize);
         // Consensus Module
         this.consensusBroker = new ConsensusBroker(
                 myProcess, peers, processLink, calculateByzantineFailures(peers.length + 1),
-                keyService, blockchain, BLOCK_TIME, MIN_BLOCK_SIZE);
+                keyService, blockchain, BLOCK_TIME, minBlockSize);
     }
 
     public void becomeByzantine(ConsensusByzantineMode cbm) {

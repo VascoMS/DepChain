@@ -5,6 +5,7 @@ import com.google.gson.reflect.TypeToken;
 import common.model.Message;
 import common.primitives.AuthenticatedPerfectLink;
 import lombok.Getter;
+import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.blockchain.model.Block;
@@ -27,7 +28,9 @@ public class Consensus {
     private static final Logger logger = LoggerFactory.getLogger(Consensus.class);
     @Getter
     private final int roundId;
-    private final Block proposal;
+    @Getter
+    @Setter
+    private Block proposal;
     private final ConsensusBroker broker;
     private final Process myProcess;
     private final Process[] peers;
@@ -39,7 +42,8 @@ public class Consensus {
     private final ConcurrentHashMap<String, ConsensusPayload> peersStates;
     private final ConcurrentHashMap<String, WritePair> peersWrites;
     private final ConcurrentHashMap<String, String> peersAccepts;
-    private boolean fetchedFromClientQueue;
+    @Getter
+    private boolean returnedToMempool;
     private String currentLeaderId;
     private final int byzantineProcesses;
     private long waitingForMessageTimeout;
@@ -73,7 +77,7 @@ public class Consensus {
         this.peersWrites = new ConcurrentHashMap<>();
         this.peersAccepts = new ConcurrentHashMap<>();
         this.byzantineProcesses = byzantineProcesses;
-        this.fetchedFromClientQueue = false;
+        this.returnedToMempool = false;
         this.waitingForMessageTimeout = 1000;
         this.byzantineMode = byzantineMode;
     }
@@ -84,7 +88,6 @@ public class Consensus {
                     myId, currentLeaderId);
             if(myState.getLatestWrite() == null){
                 WritePair writePair = new WritePair(epoch, proposal);
-                this.fetchedFromClientQueue = true;
                 myState.setLatestWrite(writePair);
             }
             ConsensusPayload statePayload = createMyState(myId, consensusId);
@@ -170,9 +173,9 @@ public class Consensus {
             }
             logger.info("{}: Sending ACCEPT message, value {}", myId, collectedWrite.value());
             // Return request to queue if it had been fetched and was not chosen in the server.consensus round
-            if(fetchedFromClientQueue && myState.getLatestWrite().value() != null && !myState.getLatestWrite().equals(collectedWrite)) {
+            if(!returnedToMempool && myState.getLatestWrite().value() != null && !myState.getLatestWrite().equals(collectedWrite)) {
                 broker.returnTransactions(proposal, collectedWrite.value());
-                fetchedFromClientQueue = false;
+                returnedToMempool = true;
             }
             myState.setLatestWrite(collectedWrite);
             ConsensusPayload collectedPayload = new ConsensusPayload(
@@ -280,7 +283,6 @@ public class Consensus {
     private ConsensusPayload createMyState(String myId, int consensusId) {
         if(myState.getLatestWrite() == null) {
             WritePair writePair = new WritePair(epoch, proposal);
-            this.fetchedFromClientQueue = true;
             myState.setLatestWrite(writePair);
         }
         return new ConsensusPayload(

@@ -395,6 +395,65 @@ public class ConsensusTest {
     }
 
     @Test
+    public void makingUpTransactionsTest() throws Exception {
+        // Assemble
+        ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
+        ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
+
+        CountDownLatch nullLatch = new CountDownLatch(3);
+
+        Transaction aliceTransaction = generateTransaction("hello.");
+        Transaction bobTransaction = generateTransaction("hell-o");
+        Transaction carlTransaction = generateTransaction("he-llo");
+        jeffBroker.addClientRequest(aliceTransaction, carlTransaction);
+
+        aliceBroker.addClientRequest(aliceTransaction);
+        bobBroker.addClientRequest(bobTransaction);
+        carlBroker.addClientRequest(carlTransaction);
+
+        Observer<ConsensusOutcomeDto> nullTester = outcome -> {
+            try {
+                assertNull(outcome.decision());
+            } catch (Throwable e) {
+                if (e instanceof AssertionError) {
+                    failures.add((AssertionError) e);
+                } else if (e instanceof Exception) {
+                    errors.add((Exception) e);
+                }
+            } finally {
+                nullLatch.countDown();
+            }
+        };
+
+        bobBroker.addObserver(nullTester);
+        carlBroker.addObserver(nullTester);
+        jeffBroker.addObserver(nullTester);
+
+        // Alice is the byzantine, she'll make up transactions.
+        aliceBroker.becomeByzantine(ConsensusByzantineMode.CLIENT_SPOOFING);
+
+        // Act
+        aliceBroker.start();
+        bobBroker.start();
+        carlBroker.start();
+        jeffBroker.start();
+
+        nullLatch.await();
+
+        if(!failures.isEmpty()) {
+            throw failures.peek();
+        }
+
+        if(!errors.isEmpty()) {
+            throw errors.peek();
+        }
+
+        bobBroker.removeObserver(nullTester);
+        carlBroker.removeObserver(nullTester);
+        jeffBroker.removeObserver(nullTester);
+    }
+
+    @Test
     public void differentCollectedConsensus() throws Exception {
         // Assemble
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();

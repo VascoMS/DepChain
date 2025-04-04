@@ -32,7 +32,7 @@ public class Main {
     public static String COIN_NAME = "ISTCoin";
     public static String COIN_SYMBOL = "IST";
 
-    public static void main(String[] args) {
+    public static void other(String[] args) {
         SimpleWorld simpleWorld = new SimpleWorld();
 
         Address aliceAddress = Address.fromHexString(ALICE_ADDRESS);
@@ -148,7 +148,7 @@ public class Main {
         return String.format("%064x", bigInt);
     }
 
-    public static void useless(String args[]) {
+    public static void main(String args[]) {
         SimpleWorld simpleWorld = new SimpleWorld();
         Address aliceAddress = Address.fromHexString(ALICE_ADDRESS);
         Address blacklistContractAddress = Address.fromHexString(BLACKLIST_ADDRESS);
@@ -181,7 +181,6 @@ public class Main {
         executor.worldUpdater(simpleWorld.updater());
         executor.gas(10_000_000L);
         executor.callData(Bytes.EMPTY);
-
 
         // Execute first contract creation
         executor.commitWorldState();

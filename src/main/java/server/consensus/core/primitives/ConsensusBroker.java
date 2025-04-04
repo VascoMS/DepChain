@@ -11,10 +11,9 @@ import server.blockchain.model.Block;
 import server.consensus.core.model.ConsensusOutcomeDto;
 import server.consensus.core.model.ConsensusPayload;
 import server.consensus.test.ConsensusByzantineMode;
-import util.KeyService;
+import util.*;
 import util.Observer;
 import util.Process;
-import util.Subject;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -72,7 +71,6 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
                 long currentTime = System.currentTimeMillis();
                 Consensus consensus;
                 int currentRound = currentConsensusRound.intValue();
-
                 if (activeConsensusInstances.containsKey(currentRound)) {
                     logger.info("{}: Consensus round {} already active", myProcess.getId(), currentRound);
                     consensus = activeConsensusInstances.get(currentRound);
@@ -99,6 +97,10 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
                 } catch (TimeoutException e) {
                     logger.warn("{}: Consensus round {} timed out", myProcess.getId(), currentRound);
                     consensusFuture.cancel(true); // Attempt to interrupt the consensus thread
+                    if(consensus.isReturnedToMempool()) { // Rebuild block in case transactions were returned to mempool before timeout
+                        Block proposal = buildBlock();
+                        consensus.setProposal(proposal);
+                    }
                 }
 
                 if (decision != null) {
@@ -153,9 +155,28 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
         currentConsensusRound.incrementAndGet();
     }
 
-    private Block buildBlock() {
+    private Block buildBlock() throws Exception {
         List<Transaction> transactions = new ArrayList<>();
         mempool.drainTo(transactions, 8);
+        if(byzantineMode == ConsensusByzantineMode.CLIENT_SPOOFING) {
+            String signature = SecurityUtil.signTransaction(
+                    "deaddeaddeaddeaddeaddeaddeaddeaddeaddead",
+                    "deaddeaddeaddeaddeaddeaddeaddeaddeaddead",
+                    999,
+                    null,
+                    999,
+                    keyService.loadPrivateKey(myProcess.getId())
+            );
+            Transaction spoofTransaction = new Transaction (
+                    "deaddeaddeaddeaddeaddeaddeaddeaddeaddead",
+                    "deaddeaddeaddeaddeaddeaddeaddeaddeaddead",
+                    999,
+                    null,
+                    999,
+                    signature
+            );
+            transactions.add(spoofTransaction);
+        }
         return new Block (
                 blockchain.getLastBlock().getBlockHash(),
                 transactions,
@@ -165,9 +186,15 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
 
     // Returns transactions present in block that are not present in decided block.
     protected void returnTransactions(Block block, Block decidedBlock) {
-        List<Transaction> transactionsToReturn = block.getTransactions().stream().filter(
-                (transaction) -> !decidedBlock.getTransactions().contains(transaction)
-        ).toList();
+        List<Transaction> transactionsToReturn;
+        if (decidedBlock == null) {
+            transactionsToReturn = block.getTransactions();
+        } else {
+            transactionsToReturn = block.getTransactions().stream().filter(
+                    (transaction) -> !decidedBlock.getTransactions().contains(transaction)
+            ).toList();
+
+        }
         mempool.addAll(transactionsToReturn);
     }
 

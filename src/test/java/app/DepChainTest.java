@@ -14,10 +14,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import java.util.concurrent.TimeUnit;
-import org.junit.jupiter.api.AfterAll;
+
+import org.junit.jupiter.api.*;
+
 import static org.junit.jupiter.api.Assertions.*;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
+
 import server.app.ClientRequestBroker;
 import server.app.Node;
 import server.consensus.test.ConsensusByzantineMode;
@@ -203,13 +204,61 @@ public class DepChainTest {
     }
 
     @Test
+    public void checkData() throws Exception {
+
+        String name = aliceClient.getData(ClientOperations.Operations.NAME);
+        assertNotNull(name);
+        assertEquals("ISTCoin", name);
+
+        String symbol = aliceClient.getData(ClientOperations.Operations.SYMBOL);
+        assertNotNull(symbol);
+        assertEquals("IST", symbol);
+
+        String owner = aliceClient.getData(ClientOperations.Operations.OWNER);
+        assertNotNull(owner);
+        assertEquals(alice.getId(), owner);
+
+        String decimals = bobClient.getData(ClientOperations.Operations.DECIMALS);
+        assertNotNull(decimals);
+        assertEquals("2", decimals);
+
+        String totalSupply = bobClient.getData(ClientOperations.Operations.TOTAL_SUPPLY);
+        assertNotNull(totalSupply);
+        assertEquals("100000000", totalSupply);
+    }
+
+    @Test
     public void checkBalance() throws Exception {
         // Request should be successful.
-        int istBalance = aliceClient.balance(TokenType.ISTCOIN);
-        assertTrue(istBalance != -1);
+        Integer istBalance = aliceClient.balance(TokenType.ISTCOIN);
+        assertNotNull(istBalance);
 
-        int depBalance = bobClient.balance(TokenType.DEPCOIN);
-        assertTrue(depBalance != -1);
+        Integer depBalance = bobClient.balance(TokenType.DEPCOIN);
+        assertNotNull(depBalance);
+    }
+
+    @Test
+    public void checkAllowance() throws Exception {
+        Integer allowance = aliceClient.allowance(bob.getId());
+        assertNotNull(allowance);
+    }
+
+    @Test
+    public void approveAndTransferFrom() throws Exception {
+        // Approve
+        assertTrue(aliceClient.approve(bob.getId(), 1));
+
+        // Transfer from
+        assertTrue(bobClient.transferFrom(alice.getId(), alice.getId(), 1));
+    }
+
+    @Test
+    public void transferringFromWithoutApproval() throws Exception {
+        // Not approve
+        assertTrue(aliceClient.approve(bob.getId(), 0));
+
+        // Transfer from
+        assertFalse(bobClient.transferFrom(alice.getId(), alice.getId(), 10));
     }
 
     @Test
@@ -264,6 +313,7 @@ public class DepChainTest {
         // Assemble
         assertTrue(aliceClient.transfer(bob.getId(), 1, TokenType.ISTCOIN));
         assertTrue(aliceClient.addToBlacklist(bob.getId()));
+        assertTrue(bobClient.isBlacklisted());
 
         // Act
         boolean blacklistedTransferSuccess = bobClient.transfer(alice.getId(), 1, TokenType.ISTCOIN);
@@ -274,6 +324,7 @@ public class DepChainTest {
         // Remove from blacklist
         // Assemble
         assertTrue(aliceClient.removeFromBlacklist(bob.getId()));
+        assertFalse(bobClient.isBlacklisted());
 
         // Act
         boolean notBlacklistedTransferSuccess = bobClient.transfer(alice.getId(), 1, TokenType.ISTCOIN);
@@ -281,6 +332,25 @@ public class DepChainTest {
         // Assert
         assertTrue(notBlacklistedTransferSuccess);
     }
+
+    @Test
+    public void transferringAndRenouncingOwnership() throws Exception {
+        // Transfer ownership
+        assertTrue(aliceClient.transferOwnership(bob.getId()));
+
+        // Check owner
+        assertEquals(bob.getId(), aliceClient.getData(ClientOperations.Operations.OWNER));
+
+        // Transfer it back
+        assertTrue(bobClient.transferOwnership(alice.getId()));
+    }
+
+    @Test
+    public void transferringWhenNotOwner() throws Exception {
+        // Transfer ownership
+        assertFalse(bobClient.transferOwnership(bob.getId()));
+    }
+
 
     @Test
     public void oneMinuteStressTest() throws Exception {
@@ -309,8 +379,8 @@ public class DepChainTest {
         if(!errors.isEmpty()) {
             throw errors.peek();
         }
-        aliceExecutor.shutdown();
-        bobExecutor.shutdown();
+        aliceExecutor.shutdownNow();
+        bobExecutor.shutdownNow();
 
         assertTrue(aliceExecutor.awaitTermination(10, TimeUnit.SECONDS));
         assertTrue(bobExecutor.awaitTermination(10, TimeUnit.SECONDS));

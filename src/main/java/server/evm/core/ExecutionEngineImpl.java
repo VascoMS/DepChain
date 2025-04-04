@@ -23,6 +23,7 @@ import server.evm.util.EvmMetadataUtils;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -45,7 +46,16 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         this.state = new SimpleWorld();
 
         this.evmExecutor = EVMExecutor.evm(EvmSpecVersion.CANCUN);
-        readFunctionIdentifiers = Set.of("70a08231", "313ce567", "06fdde03", "95d89b41", "18160ddd");
+        readFunctionIdentifiers = Set.of(
+                "70a08231",
+                "313ce567",
+                "06fdde03",
+                "95d89b41",
+                "18160ddd",
+                "8da5cb5b",
+                "dd62ed3e",
+                "fe575a87"
+        );
         logger.debug("Configured read function identifiers: {}", readFunctionIdentifiers);
 
         this.executionOutputStream = new ByteArrayOutputStream();
@@ -376,12 +386,17 @@ public class ExecutionEngineImpl implements ExecutionEngine {
             boolean result = extractBooleanFromReturnData(byteArrayOutputStream);
             logger.debug("Return data interpreted as boolean: {}", result);
             return Boolean.toString(result);
-        } else {
+        } else if(returnType.equals("string")){
+            String result = extractStringFromReturnData(byteArrayOutputStream);
+            logger.debug("Return data interpreted as string: {}", result);
+            return result;
+        } else if(returnType.contains("uint")){
             int intValue = extractIntegerFromReturnData(byteArrayOutputStream);
             logger.debug("Return data interpreted as integer: {}", intValue);
             return Integer.toString(intValue);
         }
 
+        return trimLeadingZeros(extractReturnData(byteArrayOutputStream));
     }
 
     private static boolean extractBooleanFromReturnData(ByteArrayOutputStream byteArrayOutputStream) {
@@ -392,6 +407,22 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         boolean result = !lastByte.equals("00");
         logger.debug("Extracted boolean value from return data: {}", result);
         return result;
+    }
+
+    private static String extractStringFromReturnData(ByteArrayOutputStream byteArrayOutputStream) {
+        String returnData = extractReturnData(byteArrayOutputStream);
+        logger.debug("Extracted string value from return data: {}", returnData);
+        return hexToUtf8(returnData);
+    }
+
+    public static String hexToUtf8(String hex) {
+        int length = Integer.parseInt(String.valueOf(hex.charAt(hex.length() - 1)), 16);
+        byte[] bytes = new byte[length];
+        for (int i = 0; i < length; i += 2) {
+            bytes[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
+                    + Character.digit(hex.charAt(i + 1), 16));
+        }
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 
     private boolean isContract(MutableAccount account) {
