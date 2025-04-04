@@ -255,7 +255,7 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
         if(responses.stream().filter(r -> r.equals(response)).count() > byzantineFailures) {
             future.complete(response);
         }
-        if((long) responses.size() == serverIds.length) {
+        else if((long) responses.size() == serverIds.length) {
             future.complete(new ServerResponse(response.requestId(), false, null));
         }
     }

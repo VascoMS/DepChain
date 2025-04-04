@@ -211,7 +211,7 @@ public class ExecutionEngineImpl implements ExecutionEngine {
         return executeTransaction(transaction, true);
     }
 
-    private TransactionResult executeTransaction(Transaction transaction, boolean setNonce) {
+    private synchronized TransactionResult executeTransaction(Transaction transaction, boolean setNonce) {
         logger.info("Executing transaction {} from: {} to: {}", transaction.nonce(), transaction.from(), transaction.to());
         Address sender = Address.fromHexString(transaction.from());
         Address receiver = Address.fromHexString(transaction.to());

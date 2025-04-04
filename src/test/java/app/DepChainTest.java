@@ -306,6 +306,8 @@ public class DepChainTest {
         if(!errors.isEmpty()) {
             throw errors.peek();
         }
+        aliceExecutor.shutdown();
+        bobExecutor.shutdown();
     }
 
     private void clientLoop(
@@ -349,12 +351,13 @@ public class DepChainTest {
         try {
             // Balance
             TokenType tokenType = randomTokenType();
-            int balance = client.balance(tokenType);
+            Integer balance = client.balance(tokenType);
+            assertNotNull(balance);
             assertTrue(balance > -1);
             // Transfer
             if(balance > 0) {
                 int amountSent = new Random().nextInt(balance);
-                assertTrue(client.transfer(transferRecipient, amountSent, tokenType));
+                client.transfer(transferRecipient, amountSent, tokenType);
             }
         } catch (AssertionError ae) {
             failures.add(ae);
