@@ -12,14 +12,15 @@ import java.util.Random;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicLong;
 
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterAll;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import server.app.ClientRequestBroker;
 import server.app.Node;
+import server.consensus.test.ConsensusByzantineMode;
 import util.KeyService;
 import util.Process;
 import util.SecurityUtil;
@@ -79,6 +80,8 @@ public class DepChainTest {
         Node node1 = new Node(SERVER_BASE_PORT, process1.getId(), processes, SERVER_KEY_SERVICE);
         Node node2 = new Node(SERVER_BASE_PORT, process2.getId(), processes, SERVER_KEY_SERVICE);
         Node node3 = new Node(SERVER_BASE_PORT, process3.getId(), processes, SERVER_KEY_SERVICE);
+
+        node3.becomeByzantine(ConsensusByzantineMode.DROP_ALL);
 
         server0 = new ClientRequestBroker(process0, clients, node0, SERVER_KEY_SERVICE);
         server1 = new ClientRequestBroker(process1, clients, node1, SERVER_KEY_SERVICE);
@@ -308,6 +311,9 @@ public class DepChainTest {
         }
         aliceExecutor.shutdown();
         bobExecutor.shutdown();
+
+        assertTrue(aliceExecutor.awaitTermination(10, TimeUnit.SECONDS));
+        assertTrue(bobExecutor.awaitTermination(10, TimeUnit.SECONDS));
     }
 
     private void clientLoop(
@@ -329,7 +335,8 @@ public class DepChainTest {
                 if(!errors.isEmpty())
                     break;
 
-                clientExecutor.submit(() -> op.doOperation(client, transferRecipient, failures, errors));
+                if(duration - (System.currentTimeMillis() - startTime) > BLOCK_TIME)
+                    clientExecutor.submit(() -> op.doOperation(client, transferRecipient, failures, errors));
 
                 // Wait until delay ends.
                 Thread.sleep(delay);

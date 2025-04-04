@@ -10,6 +10,7 @@ import server.blockchain.Blockchain;
 import server.blockchain.BlockchainImpl;
 import server.consensus.core.model.ConsensusOutcomeDto;
 import server.consensus.core.primitives.ConsensusBroker;
+import server.consensus.test.ConsensusByzantineMode;
 import server.evm.core.ExecutionEngine;
 import server.evm.core.ExecutionEngineImpl;
 import server.evm.model.TransactionResult;
@@ -44,6 +45,10 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
         this.consensusBroker = new ConsensusBroker(
                 myProcess, peers, processLink, calculateByzantineFailures(peers.length + 1),
                 keyService, blockchain, BLOCK_TIME, MIN_BLOCK_SIZE);
+    }
+
+    public void becomeByzantine(ConsensusByzantineMode cbm) {
+        consensusBroker.becomeByzantine(cbm);
     }
 
     public void bootstrap(String genesisBlockPath) {
