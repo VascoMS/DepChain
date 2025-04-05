@@ -15,13 +15,13 @@ public class ClientApp {
         }
 
         int port = Integer.parseInt(args[0]);
-        String myId = args[1];
+        String address = args[1];
         int serverBasePort = Integer.parseInt(args[2]);
         String defaultHost = "localhost";
 
         Scanner scanner = new Scanner(System.in);
         try {
-            Process myProcess = new Process(myId, defaultHost, port);
+            Process myProcess = new Process(address, defaultHost, port);
             Process[] servers = {
                     new Process("p0", defaultHost, serverBasePort),
                     new Process("p1", defaultHost, serverBasePort + 1),

@@ -7,7 +7,7 @@ Team Members:
 - Miguel dos Santos Raposo (112167)
 - André Madaleno Gonçalves (112294)
 
-``src`` is where the source code is located. ``docs`` is where the report is located.
+``src`` is where the source code is located. ``docs`` is where the reports are located.
 
 
 ## How to run
@@ -21,8 +21,10 @@ To run the system normally, you need to create 1 Client and 4 Servers. You can c
 
 Client:
 ```shell
-mvn exec:java -Dexec.mainClass="client.app.ClientApp" -Dexec.args="<client-port> 1 <server-client-base-port>"
+mvn exec:java -Dexec.mainClass="client.app.ClientApp" -Dexec.args="<client-port> <address> <server-client-base-port>"
 ```
+\<address\> should be either deaddeaddeaddeaddeaddeaddeaddeaddeaddead or beefbeefbeefbeefbeefbeefbeefbeefbeefbeef.
+deaddeaddeaddeaddeaddeaddeaddeaddeaddead is the owner of the ISTCoin smart contract, so they are the only ones that can modify the blacklist. Additionally, the total supply of ISTCoin is initially owned by them.
 
 Server:
 ```shell
@@ -36,7 +38,7 @@ mvn exec:java -Dexec.mainClass="server.app.Server" -Dexec.args="<server-base-por
 
 If you're running it on Windows, ``exec.mainClass`` and ``exec.args`` in quotation marks:
 ```shell
-mvn exec:java -D"exec.mainClass"="client.app.ClientApp" -D"exec.args"="<client-port> 1 <server-base-port>"
+mvn exec:java -D"exec.mainClass"="client.app.ClientApp" -D"exec.args"="<client-port> <address> <server-base-port>"
 mvn exec:java -D"exec.mainClass"="server.app.Server" -D"exec.args"="<server-base-port> <replica-id> <client-base-port>"
 ```
 
