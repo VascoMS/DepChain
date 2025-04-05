@@ -31,7 +31,7 @@ Server:
 mvn exec:java -Dexec.mainClass="server.app.Server" -Dexec.args="<server-base-port> <replica-id> <client-base-port>"
 ```
 
-\<replica-id\> is a sequential identifier of each process. As such, if you're starting up 4 servers, the identifiers must be 0-3.
+\<replica-id\> is an identifier of each process. They should be "p0", "p1", "p2" or "p3".
 \<client-base-port\> must be the same as the client-port.
 \<server-base-port\> must be the same across all servers.
 \<server-client-base-port\> must be equal to \<server-base-port\> + 100.
