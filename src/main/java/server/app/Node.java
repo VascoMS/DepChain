@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.blockchain.Blockchain;
 import server.blockchain.BlockchainImpl;
+import server.blockchain.exception.BootstrapException;
 import server.consensus.core.model.ConsensusOutcomeDto;
 import server.consensus.core.primitives.ConsensusBroker;
 import server.consensus.test.ConsensusByzantineMode;
@@ -34,7 +35,7 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
     private final int minBlockSize = 1;
     public static final int BLOCK_TIME = 6000;
     public static final String GENESIS_BLOCK_PATH = "src/main/java/server/blockchain/resources/genesis.json";
-    public static final String BLOCKCHAIN_PATH = "src/main/java/server/blockchain/resources/blocks.json";
+    public static final String BLOCKCHAIN_PATH = "src/main/java/server/blockchain/resources/%s_blocks.json";
 
     public Node(int basePort, String myId, Process[] processes, KeyService keyService) throws Exception {
         this.myProcess = new Process(myId, "localhost", basePort + Integer.parseInt(myId.substring(1)));
@@ -45,7 +46,7 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
         this.processLink = new AuthenticatedPerfectLink(
                 myProcess, peers, LinkType.SERVER_TO_SERVER, 100, SecurityUtil.SERVER_KEYSTORE_PATH);
         // Blockchain Module
-        blockchain = new BlockchainImpl(keyService, executionEngine, minBlockSize, BLOCKCHAIN_PATH);
+        blockchain = new BlockchainImpl(keyService, executionEngine, minBlockSize, String.format(BLOCKCHAIN_PATH, myProcess.getId()));
         // Consensus Module
         this.consensusBroker = new ConsensusBroker(
                 myProcess, peers, processLink, calculateByzantineFailures(peers.length + 1),
@@ -56,7 +57,7 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
         consensusBroker.becomeByzantine(cbm);
     }
 
-    public void bootstrap(String genesisBlockPath) {
+    public void bootstrap(String genesisBlockPath) throws BootstrapException {
         blockchain.bootstrap(genesisBlockPath);
     }
 
@@ -89,7 +90,12 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
 
 
     public void start() {
-        bootstrap(GENESIS_BLOCK_PATH);
+        try {
+            bootstrap(GENESIS_BLOCK_PATH);
+        } catch (BootstrapException e) {
+            logger.error("Error bootstrapping blockchain: {}", e.getMessage(), e);
+            return;
+        }
         logger.info("Node {} started.", myProcess.getId());
         consensusBroker.addObserver(this);
         consensusBroker.start();

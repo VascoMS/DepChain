@@ -3,6 +3,7 @@ package server.blockchain;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import org.slf4j.Logger;
+import server.blockchain.exception.BootstrapException;
 import server.blockchain.model.Block;
 import server.blockchain.model.GenesisBlock;
 import server.evm.core.ExecutionEngine;
@@ -34,7 +35,7 @@ public class BlockchainImpl implements Blockchain { // TODO: Persist blockchain
         this.persistenceFilePath = persistenceFilePath;
     }
 
-    public void bootstrap(String genesisFilePath) {
+    public void bootstrap(String genesisFilePath) throws BootstrapException {
         Gson gson = new Gson();
         try (FileReader reader = new FileReader(genesisFilePath)) {
             GenesisBlock genesisBlock = gson.fromJson(reader, GenesisBlock.class);
@@ -42,6 +43,7 @@ public class BlockchainImpl implements Blockchain { // TODO: Persist blockchain
             executionEngine.initState(genesisBlock.getState());
         } catch (IOException e) {
             logger.error("Error reading genesis file: {}", e.getMessage());
+            throw new BootstrapException("Error reading genesis file", e);
         }
         Path blockchainPath = Paths.get(persistenceFilePath);
         if(!Files.exists(blockchainPath)){
@@ -50,9 +52,17 @@ public class BlockchainImpl implements Blockchain { // TODO: Persist blockchain
                 exportToJson();
             } catch (IOException e) {
                 logger.error("Error creating blockchain file: {}", e.getMessage());
+                throw new BootstrapException("Error creating blockchain file", e);
             }
         } else {
-            List<Block> blocks = importFromJson();
+            List<Block> blocks = importFromJson().subList(1, blockchain.size()); // skip genesis block since it is already added
+            for (Block block : blocks) {
+                if (!validateNextBlock(block)) {
+                    logger.error("Invalid block found in blockchain file: {}", block);
+                    throw new BootstrapException("Invalid block found in blockchain file");
+                }
+                addBlock(block);
+            }
         }
     }
 

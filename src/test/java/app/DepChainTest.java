@@ -6,6 +6,9 @@ import common.model.ClientRequest;
 import common.model.ServerResponse;
 import common.model.Transaction;
 import common.model.TransactionType;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.PrivateKey;
 import java.util.List;
 import java.util.Random;
@@ -531,4 +534,5 @@ public class DepChainTest {
             client.close();
         }
     }
+
 }
