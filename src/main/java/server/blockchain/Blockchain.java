@@ -7,4 +7,5 @@ public interface Blockchain {
     void bootstrap(String genesisFilePath);
     void addBlock(Block block);
     Block getLastBlock();
+    void exportToJson();
 }

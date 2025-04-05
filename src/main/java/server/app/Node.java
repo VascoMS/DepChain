@@ -19,6 +19,8 @@ import server.evm.model.TransactionResult;
 import util.*;
 import util.Process;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
 
 public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
@@ -32,6 +34,7 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
     private final int minBlockSize = 1;
     public static final int BLOCK_TIME = 6000;
     public static final String GENESIS_BLOCK_PATH = "src/main/java/server/blockchain/resources/genesis.json";
+    public static final String BLOCKCHAIN_PATH = "src/main/java/server/blockchain/resources/blocks.json";
 
     public Node(int basePort, String myId, Process[] processes, KeyService keyService) throws Exception {
         this.myProcess = new Process(myId, "localhost", basePort + Integer.parseInt(myId.substring(1)));
@@ -42,7 +45,7 @@ public class Node implements Observer<ConsensusOutcomeDto>, AutoCloseable {
         this.processLink = new AuthenticatedPerfectLink(
                 myProcess, peers, LinkType.SERVER_TO_SERVER, 100, SecurityUtil.SERVER_KEYSTORE_PATH);
         // Blockchain Module
-        blockchain = new BlockchainImpl(keyService, executionEngine, minBlockSize);
+        blockchain = new BlockchainImpl(keyService, executionEngine, minBlockSize, BLOCKCHAIN_PATH);
         // Consensus Module
         this.consensusBroker = new ConsensusBroker(
                 myProcess, peers, processLink, calculateByzantineFailures(peers.length + 1),

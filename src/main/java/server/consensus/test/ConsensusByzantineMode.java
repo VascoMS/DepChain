@@ -6,5 +6,7 @@ public enum ConsensusByzantineMode {
     // Drop all messages received.
     DROP_ALL,
     // Make up client transactions.
-    CLIENT_SPOOFING
+    CLIENT_SPOOFING,
+    // Omit random blocks when sending COLLECTED.
+    OMITTING_SOME;
 }

@@ -159,6 +159,7 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
         List<Transaction> transactions = new ArrayList<>();
         mempool.drainTo(transactions, 8);
         if(byzantineMode == ConsensusByzantineMode.CLIENT_SPOOFING) {
+            logger.debug("{}: Byzantine - adding another unreceived request", myProcess.getId());
             String signature = SecurityUtil.signTransaction(
                     "deaddeaddeaddeaddeaddeaddeaddeaddeaddead",
                     "deaddeaddeaddeaddeaddeaddeaddeaddeaddead",

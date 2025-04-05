@@ -25,6 +25,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -270,7 +271,7 @@ public class ExecutionEngineImpl implements ExecutionEngine {
             logger.info("Sender account nonce updated to: {}", senderAccount.getNonce());
             logger.debug("EVM execution completed");
             if(isContract(receiverAccount)) {
-                String error = getError(executionOutputStream);
+                String error = EvmErrorUtils.getError(executionOutputStream);
                 if (error != null) {
                     logger.warn("Error executing transaction {} {}: {}", transaction.from(), transaction.nonce(), error);
                     String errorMessage = EvmErrorUtils.parseError(error);
@@ -296,21 +297,6 @@ public class ExecutionEngineImpl implements ExecutionEngine {
             }
         }
         return result;
-    }
-
-    public static String getError(ByteArrayOutputStream byteArrayOutputStream) {
-        String output = byteArrayOutputStream.toString();
-        String[] lines = output.split("\\r?\\n");
-        if (lines.length == 0) {
-            return null;
-        }
-
-        JsonObject jsonObject = JsonParser.parseString(lines[lines.length - 1]).getAsJsonObject();
-        return jsonObject.get("error") != null ? jsonObject.get("error").getAsString() : null;
-    }
-
-    private static String extractParameter(String errorData, int index) {
-        return "0x" + trimLeadingZeros(errorData.substring(10 + 64 * index, 10 + 64 * (index + 1)));
     }
 
     public static String trimLeadingZeros(String hexString) {
@@ -385,13 +371,15 @@ public class ExecutionEngineImpl implements ExecutionEngine {
 
     private static String extractStringFromReturnData(ByteArrayOutputStream byteArrayOutputStream) {
         String returnData = extractReturnData(byteArrayOutputStream);
-        logger.debug("Extracted string value from return data: {}", returnData);
-        return hexToUtf8(returnData);
+        int length = Integer.parseInt(returnData.substring(64, 128), 16);
+        String hexString = returnData.substring(128, 128 + length * 2);
+        logger.debug("Extracted string value from return data: {}", hexString);
+        return hexToUtf8(hexString);
     }
 
     public static String hexToUtf8(String hex) {
-        int length = Integer.parseInt(String.valueOf(hex.charAt(hex.length() - 1)), 16);
-        byte[] bytes = new byte[length];
+        int length = hex.length();
+        byte[] bytes = new byte[length / 2];
         for (int i = 0; i < length; i += 2) {
             bytes[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
                     + Character.digit(hex.charAt(i + 1), 16));

@@ -82,6 +82,19 @@ public class EvmErrorUtils {
         return "0x" + trimLeadingZeros(errorData.substring(10 + 64 * index, 10 + 64 * (index + 1)));
     }
 
+    public static String getError(ByteArrayOutputStream byteArrayOutputStream) {
+        String output = byteArrayOutputStream.toString();
+        String[] lines = output.split("\\r?\\n");
+        if (lines.length == 0) {
+            return null;
+        }
+
+        JsonObject jsonObject = JsonParser.parseString(lines[lines.length - 1]).getAsJsonObject();
+        return jsonObject.get("error") != null ? jsonObject.get("error").getAsString() : null;
+    }
+
+
+
     public static String trimLeadingZeros(String hexString) {
         if (hexString.startsWith("0x")) {
             hexString = hexString.substring(2);

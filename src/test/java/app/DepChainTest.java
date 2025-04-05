@@ -351,6 +351,12 @@ public class DepChainTest {
         assertFalse(bobClient.transferOwnership(bob.getId()));
     }
 
+    @Test
+    public void renouncingOwnerWhenNotOwner() throws Exception {
+        // Transfer ownership
+        assertFalse(bobClient.renounceOwnership());
+    }
+
 
     @Test
     public void oneMinuteStressTest() throws Exception {

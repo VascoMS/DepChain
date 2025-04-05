@@ -15,7 +15,6 @@ public class Block {
     private final String blockHash;
     private final long timestamp;
     private final List<Transaction> transactions;
-    //private String signature;
 
     public Block(String parentHash, List<Transaction> transactions, long timestamp) {
         this.parentHash = parentHash;
@@ -63,12 +62,4 @@ public class Block {
         if(!(obj instanceof Block block)) return false;
         return block.blockHash.equals(this.blockHash);
     }
-
-    /*protected void signBlock(PrivateKey privateKey) throws Exception {
-        this.signature = SecurityUtil.signString(this.blockHash, privateKey);
-    }
-
-    protected boolean verifyBlockSignature(PublicKey publicKey) throws Exception {
-        return SecurityUtil.verifySignature(this.blockHash, this.signature, publicKey);
-    }*/
 }

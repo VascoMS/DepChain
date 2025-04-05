@@ -119,7 +119,7 @@ public class ConsensusTest {
                 serverKeyService,
                 aliceBlockchain,
                 blockTime,
-                2
+                1
         );
 
         bobBroker = new ConsensusBroker(
@@ -130,7 +130,7 @@ public class ConsensusTest {
                 serverKeyService,
                 bobBlockchain,
                 blockTime,
-                2
+                1
         );
 
         carlBroker = new ConsensusBroker(
@@ -141,7 +141,7 @@ public class ConsensusTest {
                 serverKeyService,
                 carlBlockchain,
                 blockTime,
-                2
+                1
         );
 
         jeffBroker = new ConsensusBroker(
@@ -152,7 +152,7 @@ public class ConsensusTest {
                 serverKeyService,
                 jeffBlockchain,
                 blockTime,
-                2
+                1
         );
     }
 
@@ -346,8 +346,8 @@ public class ConsensusTest {
         Transaction aliceTransaction = generateTransaction("hello.");
         Transaction bobTransaction = generateTransaction("hell-o");
         Transaction carlTransaction = generateTransaction("he-llo");
-        jeffBroker.addClientRequest(aliceTransaction, carlTransaction);
 
+        jeffBroker.addClientRequest(aliceTransaction, carlTransaction);
         aliceBroker.addClientRequest(aliceTransaction);
         bobBroker.addClientRequest(bobTransaction);
         carlBroker.addClientRequest(carlTransaction);
@@ -405,8 +405,8 @@ public class ConsensusTest {
         Transaction aliceTransaction = generateTransaction("hello.");
         Transaction bobTransaction = generateTransaction("hell-o");
         Transaction carlTransaction = generateTransaction("he-llo");
-        jeffBroker.addClientRequest(aliceTransaction, carlTransaction);
 
+        jeffBroker.addClientRequest(aliceTransaction, carlTransaction);
         aliceBroker.addClientRequest(aliceTransaction);
         bobBroker.addClientRequest(bobTransaction);
         carlBroker.addClientRequest(carlTransaction);
@@ -459,65 +459,18 @@ public class ConsensusTest {
         ConcurrentLinkedQueue<AssertionError> failures = new ConcurrentLinkedQueue<>();
         ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
 
-        CountDownLatch latch = new CountDownLatch(4);
+        CountDownLatch nullLatch = new CountDownLatch(3);
 
         Transaction aliceTransaction = generateTransaction("hello.");
-        Transaction aliceByzantineTransaction = generateTransaction("hell-o");
+        Transaction bobTransaction = generateTransaction("hell-o");
+        Transaction carlTransaction = generateTransaction("he-llo");
 
-        Block aliceBlock = new Block(
-                        aliceBlockchain.getLastBlock().getBlockHash(),
-                        List.of(aliceTransaction),
-                        System.currentTimeMillis()
-                );
-        Block aliceByzantineBlock = new Block(
-                        aliceBlockchain.getLastBlock().getBlockHash(),
-                        List.of(aliceByzantineTransaction),
-                        System.currentTimeMillis()
-                );
+        jeffBroker.addClientRequest(aliceTransaction, carlTransaction);
+        aliceBroker.addClientRequest(aliceTransaction, bobTransaction, carlTransaction);
+        bobBroker.addClientRequest(bobTransaction);
+        carlBroker.addClientRequest(carlTransaction);
 
-        WritePair aliceWritePair = new WritePair(0, aliceBlock);
-        WritePair aliceByzantineWritePair = new WritePair(0, aliceByzantineBlock);
-
-        WriteState aliceState = new WriteState(aliceWritePair, List.of(aliceWritePair));
-        WriteState aliceByzantineState = new WriteState(aliceByzantineWritePair, List.of());
-
-        ConsensusPayload aliceStatePayload = new ConsensusPayload(
-                "P0", 999, ConsensusPayload.ConsensusType.STATE, new Gson().toJson(aliceState), serverKeyService
-        );
-        ConsensusPayload aliceByzantineStatePayload = new ConsensusPayload(
-                "P0", aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.STATE, new Gson().toJson(aliceByzantineState), serverKeyService
-        );
-        ConsensusPayload bobStatePayload = new ConsensusPayload(
-                "P1", aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.STATE, new Gson().toJson(new WriteState()), serverKeyService
-        );
-        ConsensusPayload carlStatePayload = new ConsensusPayload(
-                "P2", aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.STATE,new Gson().toJson(new WriteState()), serverKeyService
-        );
-        ConsensusPayload jeffStatePayload = new ConsensusPayload(
-                "P3", aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.STATE, new Gson().toJson(new WriteState()), serverKeyService
-        );
-
-        HashMap<Integer, ConsensusPayload> normalStates = new HashMap<>();
-        normalStates.put(0, aliceStatePayload);
-        normalStates.put(2, carlStatePayload);
-        normalStates.put(3, jeffStatePayload);
-
-        ConsensusPayload normalCollectedPayload = new ConsensusPayload(
-                "P0", aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.COLLECTED, new Gson().toJson(normalStates), serverKeyService
-        );
-        HashMap<Integer, ConsensusPayload> byzantineStates = new HashMap<>();
-        byzantineStates.put(0, aliceByzantineStatePayload);
-        byzantineStates.put(1, bobStatePayload);
-        byzantineStates.put(3, jeffStatePayload);
-
-        ConsensusPayload byzantineCollectedPayload = new ConsensusPayload(
-                "P0", aliceStatePayload.getConsensusId(), ConsensusPayload.ConsensusType.COLLECTED, new Gson().toJson(byzantineStates), serverKeyService
-        );
-
-        Message normalMessage = new Message("P0", Message.Type.CONSENSUS, new Gson().toJson(normalCollectedPayload));
-        Message byzantineMessage = new Message("P0", Message.Type.CONSENSUS, new Gson().toJson(byzantineCollectedPayload));
-
-        Observer<ConsensusOutcomeDto> tester = outcome -> {
+        Observer<ConsensusOutcomeDto> nullTester = outcome -> {
             try {
                 assertNull(outcome.decision());
             } catch (Throwable e) {
@@ -527,26 +480,24 @@ public class ConsensusTest {
                     errors.add((Exception) e);
                 }
             } finally {
-                latch.countDown();
+                nullLatch.countDown();
             }
         };
 
-        aliceBroker.addObserver(tester);
-        bobBroker.addObserver(tester);
-        carlBroker.addObserver(tester);
-        jeffBroker.addObserver(tester);
+        bobBroker.addObserver(nullTester);
+        carlBroker.addObserver(nullTester);
+        jeffBroker.addObserver(nullTester);
+
+        // Alice is the byzantine, she'll send different COLLECTED messages.
+        aliceBroker.becomeByzantine(ConsensusByzantineMode.OMITTING_SOME);
 
         // Act
-        aliceLink.send("P0", normalMessage);
-        aliceLink.send("P1", byzantineMessage);
-        aliceLink.send("P2", byzantineMessage);
-        aliceLink.send("P3", normalMessage);
-
+        aliceBroker.start();
         bobBroker.start();
         carlBroker.start();
         jeffBroker.start();
 
-        latch.await();
+        nullLatch.await();
 
         if(!failures.isEmpty()) {
             throw failures.peek();
@@ -556,10 +507,9 @@ public class ConsensusTest {
             throw errors.peek();
         }
 
-        aliceBroker.removeObserver(tester);
-        bobBroker.removeObserver(tester);
-        carlBroker.removeObserver(tester);
-        jeffBroker.removeObserver(tester);
+        bobBroker.removeObserver(nullTester);
+        carlBroker.removeObserver(nullTester);
+        jeffBroker.removeObserver(nullTester);
     }
 
     private Transaction generateTransaction(String content) throws Exception {

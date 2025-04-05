@@ -18,11 +18,13 @@ import util.KeyService;
 import util.Process;
 import util.SecurityUtil;
 
+import javax.sql.PooledConnection;
 import java.lang.reflect.Type;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static server.consensus.core.model.ConsensusPayload.ConsensusType.READ;
+import static server.consensus.core.model.ConsensusPayload.ConsensusType.STATE;
 
 public class Consensus {
     private static final Logger logger = LoggerFactory.getLogger(Consensus.class);
@@ -109,14 +111,18 @@ public class Consensus {
             return; // Ignore if not leader
         peersStates.putIfAbsent(receivedPayload.getSenderId(), receivedPayload);
         if (peersStates.size() > 2 * byzantineProcesses) {
-            ConsensusPayload collectedPayload = new ConsensusPayload(
-                    myId,
-                    receivedPayload.getConsensusId(),
-                    ConsensusPayload.ConsensusType.COLLECTED,
-                    new Gson().toJson(peersStates),
-                    keyService
-            );
-            sendConsensusMessage(myId, collectedPayload);
+            if(byzantineMode == ConsensusByzantineMode.OMITTING_SOME) {
+                sendOmittedCollectedMessage(myId, receivedPayload.getConsensusId(), peersStates);
+            } else {
+                ConsensusPayload collectedPayload = new ConsensusPayload(
+                        myId,
+                        receivedPayload.getConsensusId(),
+                        ConsensusPayload.ConsensusType.COLLECTED,
+                        new Gson().toJson(peersStates),
+                        keyService
+                );
+                sendConsensusMessage(myId, collectedPayload);
+            }
         }
     }
 
@@ -376,6 +382,68 @@ public class Consensus {
             logger.info("{}: Value not present in byzantine quorum writesets, following leader", myId);
             return leaderValue;
         }
+    }
+
+    private void sendOmittedCollectedMessage(String myId, int consensusId, Map<String, ConsensusPayload> states) throws LinkException {
+        logger.info("{}: Byzantine - sending different messages to peers", myId);
+        // Sending actual states to myself.
+        ConsensusPayload collectedPayload = new ConsensusPayload(
+                myId,
+                consensusId,
+                ConsensusPayload.ConsensusType.COLLECTED,
+                new Gson().toJson(peersStates),
+                keyService
+        );
+        String payloadToSend = new Gson().toJson(collectedPayload);
+        link.send(
+                myId,
+                new Message(myId, myId, Message.Type.CONSENSUS, payloadToSend)
+        );
+
+        // Peers will get a different number of transactions.
+        int remainingTransactions = 0;
+
+        // Sending different states to peers (omitting their own state).
+        for (Process process: peers) {
+            // Omitting transactions from my block.
+            Map<String, ConsensusPayload> omittedStates = new HashMap<>(states);
+            WriteState alteredState = new Gson().fromJson(omittedStates.get(myId).getContent(), WriteState.class);
+            alteredState.setLatestWrite(
+                    new WritePair(
+                            alteredState.getLatestWrite().timestamp(),
+                            new Block(
+                                    proposal.getParentHash(),
+                                    alteredState.getLatestWrite().value().getTransactions().subList(0, remainingTransactions),
+                                    proposal.getTimestamp()
+                            )
+                    )
+            );
+            ConsensusPayload alteredPayload = new ConsensusPayload(
+                    myId,
+                    consensusId,
+                    STATE,
+                    new Gson().toJson(alteredState),
+                    keyService
+            );
+            omittedStates.put(myId, alteredPayload);
+
+            // Sending omitted states to peer.
+            String processId = process.getId();
+            ConsensusPayload omittedCollectedPayload = new ConsensusPayload(
+                    myId,
+                    consensusId,
+                    ConsensusPayload.ConsensusType.COLLECTED,
+                    new Gson().toJson(omittedStates),
+                    keyService
+            );
+            String omittedPayload = new Gson().toJson(omittedCollectedPayload);
+            link.send(
+                    processId,
+                    new Message(myId, processId, Message.Type.CONSENSUS, omittedPayload)
+            );
+            remainingTransactions++;
+        }
+
     }
 
     private void sendConsensusMessage(String myId, ConsensusPayload collectedPayload) throws LinkException {

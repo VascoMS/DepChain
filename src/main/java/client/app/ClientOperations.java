@@ -6,6 +6,7 @@ import common.primitives.AuthenticatedPerfectLink;
 import common.primitives.LinkType;
 import common.util.Addresses;
 import lombok.Getter;
+import org.bouncycastle.asn1.DERVideotexString;
 import server.consensus.exception.LinkException;
 import util.*;
 import util.Process;
@@ -77,6 +78,17 @@ public class ClientOperations implements Observer<Message>, AutoCloseable {
                     NAME, SYMBOL, DECIMALS, OWNER, TOTAL_SUPPLY
             );
             return dataOperations.contains(this);
+        }
+
+        public static Operations fromName(String name) {
+            return switch (name) {
+                case "name" -> NAME;
+                case "symbol" -> SYMBOL;
+                case "decimals" -> DECIMALS;
+                case "owner" -> OWNER;
+                case "total" -> TOTAL_SUPPLY;
+                default -> null;
+            };
         }
     }
 
