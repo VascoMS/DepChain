@@ -11,7 +11,7 @@ public class EvmErrorUtils {
         ERC20_INSUFFICIENT_BALANCE("e450d38c", "ERC20 Insufficient Balance for: %s Balance: %s Needed: %s", 3),
         ERC20_INVALID_SENDER("96c6fd1e", "ERC20 Invalid Sender: %s", 1),
         ERC20_INVALID_RECEIVER("ec442f05", "ERC20 Invalid Receiver: %s", 1),
-        ERC20_INSUFFICIENT_ALLOWANCE("ea558bdf", "ERC20 Insufficient Allowance: %s Allowance: %s Needed: %s", 3),
+        ERC20_INSUFFICIENT_ALLOWANCE("fb8f41b2", "ERC20 Insufficient Allowance: %s Allowance: %s Needed: %s", 3),
         ERC20_INVALID_SPENDER("94280d62", "ERC20 Invalid Spender: %s", 1),
         OWNABLE_UNAUTHORIZED_ACCOUNT("118cdaa7", "Ownable Unauthorized Account: %s", 1),
         OWNABLE_INVALID_OWNER("1e4fbdf7", "Ownable Invalid Owner: %s", 1),
@@ -52,7 +52,7 @@ public class EvmErrorUtils {
             return "Invalid Error Format";
         }
 
-        String errorSignature = error.substring(0, 10);
+        String errorSignature = error.substring(2, 10);
         ErrorCode errorCode = ErrorCode.fromSignature(errorSignature);
 
         if (errorCode == null) {

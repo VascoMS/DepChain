@@ -18,6 +18,7 @@ import org.hyperledger.besu.evm.tracing.StandardJsonTracer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.evm.model.TransactionResult;
+import server.evm.util.EvmErrorUtils;
 import server.evm.util.EvmMetadataUtils;
 
 import java.io.ByteArrayOutputStream;
@@ -272,7 +273,7 @@ public class ExecutionEngineImpl implements ExecutionEngine {
                 String error = getError(executionOutputStream);
                 if (error != null) {
                     logger.warn("Error executing transaction {} {}: {}", transaction.from(), transaction.nonce(), error);
-                    String errorMessage = parseError(error);
+                    String errorMessage = EvmErrorUtils.parseError(error);
                     logger.info("Parsed error message: {}", errorMessage);
                     result = TransactionResult.fail(errorMessage);
                 } else {
@@ -306,37 +307,6 @@ public class ExecutionEngineImpl implements ExecutionEngine {
 
         JsonObject jsonObject = JsonParser.parseString(lines[lines.length - 1]).getAsJsonObject();
         return jsonObject.get("error") != null ? jsonObject.get("error").getAsString() : null;
-    }
-
-    public static String parseError(String error) {
-        if (error == null || error.length() < 10) {
-            return "Unknown error";
-        }
-        String errorSignature = error.substring(2, 10);
-        logger.debug("Parsing error with signature: {}", errorSignature);
-        return switch (errorSignature) {
-            case "e450d38c" -> // ERC20InsufficientBalance(address,uint256,uint256)
-                    "ERC20 Insufficient Balance for: " + extractParameter(error, 0) +
-                            " Balance: " + extractParameter(error, 1)
-                            + " Needed: " + extractParameter(error, 2);
-            case "96c6fd1e" -> // ERC20InvalidSender(address)
-                    "ERC20 Invalid Sender: " + extractParameter(error, 0);
-            case "ec442f05" -> // ERC20InvalidReceiver(address)
-                    "ERC20 Invalid Receiver: " + extractParameter(error, 0);
-            case "ea558bdf" -> // ERC20InsufficientAllowance(address, uint256, uint256)
-                    "ERC20 Insufficient Allowance: " + extractParameter(error, 0) +
-                            " Allowance: " + extractParameter(error, 1)
-                            + " Needed: " + extractParameter(error, 2);
-            case "94280d62" -> // ERC20InvalidSpender(address)
-                    "ERC20 Invalid Spender: " + extractParameter(error, 0);
-            case "118cdaa7" -> // OwnableUnauthorizedAccount(address)
-                    "Ownable Unauthorized Account: " + extractParameter(error, 0);
-            case "1e4fbdf7" -> // OwnableInvalidOwner(address)
-                    "Ownable Invalid Owner: " + extractParameter(error, 0);
-            case "ffa4e618" -> // Blacklisted(address)
-                    "Blacklisted Account: " + extractParameter(error, 0);
-            default -> "Unknown Error: " + errorSignature;
-        };
     }
 
     private static String extractParameter(String errorData, int index) {
@@ -379,9 +349,13 @@ public class ExecutionEngineImpl implements ExecutionEngine {
     }
 
     private static String parseEvmOutput(ByteArrayOutputStream byteArrayOutputStream, String calldata) {
+        String returnType = EvmMetadataUtils.getMethodReturnType(calldata);
+        if(returnType.equals("void")) {
+            logger.debug("Void return type, no need to parse return.");
+            return ""; // Void return type should not return anything.
+        }
         String returnData = extractReturnData(byteArrayOutputStream);
         logger.debug("Parsing EVM output from return data: 0x{}", returnData);
-        String returnType = EvmMetadataUtils.getMethodReturnType(calldata);
         if (returnType.equals("bool")) {
             boolean result = extractBooleanFromReturnData(byteArrayOutputStream);
             logger.debug("Return data interpreted as boolean: {}", result);

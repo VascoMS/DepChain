@@ -384,6 +384,8 @@ public class DepChainTest {
 
         assertTrue(aliceExecutor.awaitTermination(10, TimeUnit.SECONDS));
         assertTrue(bobExecutor.awaitTermination(10, TimeUnit.SECONDS));
+
+        Thread.sleep(BLOCK_TIME); // After this, there should be no more transactions.
     }
 
     private void clientLoop(
