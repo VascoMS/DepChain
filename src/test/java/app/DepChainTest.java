@@ -22,7 +22,6 @@ import org.junit.jupiter.api.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import org.skyscreamer.jsonassert.JSONAssert;
 import server.app.ClientRequestBroker;
 import server.app.Node;
 import server.consensus.test.ConsensusByzantineMode;

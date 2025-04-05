@@ -39,14 +39,14 @@ public class Consensus {
     private final AuthenticatedPerfectLink link;
     private final KeyService keyService;
     private final WriteState myState;
-    private int epoch;
+    private final int epoch;
     private final int epochOffset;
     private final ConcurrentHashMap<String, ConsensusPayload> peersStates;
     private final ConcurrentHashMap<String, WritePair> peersWrites;
     private final ConcurrentHashMap<String, String> peersAccepts;
     @Getter
     private boolean returnedToMempool;
-    private String currentLeaderId;
+    private final String currentLeaderId;
     private final int byzantineProcesses;
     private long waitingForMessageTimeout;
     private final ConsensusByzantineMode byzantineMode;

@@ -8,5 +8,5 @@ public enum ConsensusByzantineMode {
     // Make up client transactions.
     CLIENT_SPOOFING,
     // Omit random blocks when sending COLLECTED.
-    OMITTING_SOME;
+    OMITTING_SOME
 }
