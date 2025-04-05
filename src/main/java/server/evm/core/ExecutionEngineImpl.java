@@ -25,7 +25,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;

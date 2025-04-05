@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import common.model.*;
 import common.primitives.AuthenticatedPerfectLink;
 import common.primitives.LinkType;
+import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.evm.model.TransactionResult;
@@ -17,6 +18,7 @@ import java.util.concurrent.Executors;
 public class ClientRequestBroker implements Observer<Message>, AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(ClientRequestBroker.class);
+    @Getter
     private final String myId;
     private final AuthenticatedPerfectLink link;
     private final Node node;

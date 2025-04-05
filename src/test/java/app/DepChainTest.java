@@ -7,6 +7,8 @@ import common.model.ServerResponse;
 import common.model.Transaction;
 import common.model.TransactionType;
 
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.security.PrivateKey;
 import java.util.List;
 import java.util.Random;
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import org.skyscreamer.jsonassert.JSONAssert;
 import server.app.ClientRequestBroker;
 import server.app.Node;
 import server.consensus.test.ConsensusByzantineMode;
@@ -47,7 +50,7 @@ public class DepChainTest {
     private static final KeyService SERVER_KEY_SERVICE;
     private static final KeyService CLIENT_KEY_SERVICE;
 
-    private final List<TestClientOp> clientOps = List.of(this::balanceAndSend, this::spoofRecipient, this::offChainAttempt);
+    private final List<TestClientOp> clientOps = List.of(this::balanceAndSend, this::spoofSender, this::offChainAttempt);
 
     static {
         try {
@@ -392,7 +395,13 @@ public class DepChainTest {
         assertTrue(aliceExecutor.awaitTermination(10, TimeUnit.SECONDS));
         assertTrue(bobExecutor.awaitTermination(10, TimeUnit.SECONDS));
 
-        Thread.sleep(BLOCK_TIME); // After this, there should be no more transactions.
+        String p0Json = new String(Files.readAllBytes(Paths.get(String.format(Node.BLOCKCHAIN_PATH, "p0"))));
+        for(int i = 0; i < 3; i++) {
+            String path = String.format(Node.BLOCKCHAIN_PATH, "p" + i);
+            String json = new String(Files.readAllBytes(Paths.get(path)));
+            assertEquals(p0Json, json);
+        }
+
     }
 
     private void clientLoop(
@@ -455,7 +464,7 @@ public class DepChainTest {
         }
     }
 
-    private void spoofRecipient (
+    private void spoofSender(
             ClientOperations client,
             String transferRecipient,
             ConcurrentLinkedQueue<AssertionError> failures,
@@ -527,6 +536,7 @@ public class DepChainTest {
     public static void cleanup() throws Exception {
         for(ClientRequestBroker server: new ClientRequestBroker[]{server0, server1, server2, server3}) {
             server.close();
+            Files.delete(Paths.get(String.format(Node.BLOCKCHAIN_PATH, server.getMyId()))); // Delete blockchain file
         }
         for(ClientOperations client: new ClientOperations[]{aliceClient, bobClient}) {
             client.close();

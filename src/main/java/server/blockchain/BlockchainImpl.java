@@ -55,8 +55,8 @@ public class BlockchainImpl implements Blockchain { // TODO: Persist blockchain
                 throw new BootstrapException("Error creating blockchain file", e);
             }
         } else {
-            List<Block> blocks = importFromJson().subList(1, blockchain.size()); // skip genesis block since it is already added
-            for (Block block : blocks) {
+            List<Block> importedBlocks = importFromJson();
+            for (Block block : importedBlocks.subList(1, importedBlocks.size())) { // skip genesis block since it is already added
                 if (!validateNextBlock(block)) {
                     logger.error("Invalid block found in blockchain file: {}", block);
                     throw new BootstrapException("Invalid block found in blockchain file");
@@ -132,7 +132,8 @@ public class BlockchainImpl implements Blockchain { // TODO: Persist blockchain
         Gson gson = new Gson();
         try (FileReader reader = new FileReader(persistenceFilePath)) {
             Type blockListType = new TypeToken<List<Block>>() {}.getType();
-            return gson.fromJson(reader, blockListType);
+            List<Block> blocks = gson.fromJson(reader, blockListType);
+            return blocks != null ? blocks : new ArrayList<>();
         } catch (IOException e) {
             logger.error("Error reading from JSON file: {}", e.getMessage());
             return new ArrayList<>();

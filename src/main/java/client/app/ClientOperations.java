@@ -6,8 +6,6 @@ import common.primitives.AuthenticatedPerfectLink;
 import common.primitives.LinkType;
 import common.util.Addresses;
 import lombok.Getter;
-import org.bouncycastle.asn1.DERVideotexString;
-import server.consensus.exception.LinkException;
 import util.*;
 import util.Process;
 
@@ -20,9 +18,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 import java.math.BigInteger;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static client.app.TokenType.ISTCOIN;
