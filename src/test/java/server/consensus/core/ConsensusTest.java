@@ -1,27 +1,30 @@
 package server.consensus.core;
 
-import com.google.gson.Gson;
-import common.model.Message;
 import common.model.Transaction;
 import common.primitives.AuthenticatedPerfectLink;
 import common.primitives.LinkType;
+import java.io.File;
+import java.io.FileWriter;
+import java.nio.file.Files;
+import java.security.MessageDigest;
+import java.util.Base64;
 import org.junit.jupiter.api.*;
 import org.mockito.Mock;
 import org.mockito.Mockito;
+import server.app.Node;
 import server.blockchain.Blockchain;
-import server.blockchain.model.Block;
+import server.blockchain.BlockchainImpl;
+import server.blockchain.exception.BootstrapException;
 import server.consensus.core.model.ConsensusOutcomeDto;
-import server.consensus.core.model.ConsensusPayload;
-import server.consensus.core.model.WritePair;
-import server.consensus.core.model.WriteState;
 import server.consensus.core.primitives.ConsensusBroker;
 import server.consensus.test.ConsensusByzantineMode;
+import server.evm.core.ExecutionEngine;
+import server.evm.model.TransactionResult;
 import util.KeyService;
 import util.Observer;
 import util.Process;
 import util.SecurityUtil;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
@@ -32,24 +35,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ConsensusTest {
 
-    private static Process aliceProcess;
-    private static Process bobProcess;
-    private static Process carlProcess;
-    private static Process jeffProcess;
-
     private static AuthenticatedPerfectLink aliceLink;
     private static AuthenticatedPerfectLink bobLink;
     private static AuthenticatedPerfectLink carlLink;
     private static AuthenticatedPerfectLink jeffLink;
 
     @Mock
-    private static Blockchain aliceBlockchain;
-    @Mock
-    private static Blockchain bobBlockchain;
-    @Mock
-    private static Blockchain carlBlockchain;
-    @Mock
-    private static Blockchain jeffBlockchain;
+    private static ExecutionEngine mockEngine;
 
     private static ConsensusBroker aliceBroker;
     private static ConsensusBroker bobBroker;
@@ -58,20 +50,19 @@ public class ConsensusTest {
 
     private static final AtomicLong nonce = new AtomicLong(0);
 
-    private static KeyService serverKeyService;
     private static KeyService clientKeyService;
 
-    private static final int blockTime = 3000;
+    private static final int blockTime = 6000;
 
     @BeforeAll
     public static void startLinks() throws Exception {
         // Assemble
-        aliceProcess = new Process("p0", "localhost", 1024);
-        bobProcess = new Process("p1", "localhost", 1025);
-        carlProcess = new Process("p2", "localhost", 1026);
-        jeffProcess =  new Process("p3", "localhost", 1027);
+        Process aliceProcess = new Process("p0", "localhost", 1024);
+        Process bobProcess = new Process("p1", "localhost", 1025);
+        Process carlProcess = new Process("p2", "localhost", 1026);
+        Process jeffProcess = new Process("p3", "localhost", 1027);
 
-        serverKeyService = new KeyService(SecurityUtil.SERVER_KEYSTORE_PATH, "mypass");
+        KeyService serverKeyService = new KeyService(SecurityUtil.SERVER_KEYSTORE_PATH, "mypass");
         clientKeyService = new KeyService(SecurityUtil.CLIENT_KEYSTORE_PATH, "mypass");
 
         aliceLink = new AuthenticatedPerfectLink(
@@ -98,19 +89,41 @@ public class ConsensusTest {
                 100, SecurityUtil.SERVER_KEYSTORE_PATH
         );
 
-        aliceBlockchain = Mockito.mock(Blockchain.class);
-        bobBlockchain = Mockito.mock(Blockchain.class);
-        carlBlockchain = Mockito.mock(Blockchain.class);
-        jeffBlockchain = Mockito.mock(Blockchain.class);
+        mockEngine = Mockito.mock(ExecutionEngine.class);
+        Mockito.when(mockEngine.validateTransactionNonce(Mockito.any())).thenReturn(true);
+        Mockito.when(mockEngine.getTransactionResult(Mockito.any(), Mockito.anyLong())).thenReturn(
+                TransactionResult.success()
+        );
+        Mockito.when(mockEngine.performOffChainOperation(Mockito.any())).thenReturn(TransactionResult.success());
 
-        for(Blockchain blockchain: new Blockchain[]{aliceBlockchain, bobBlockchain, carlBlockchain, jeffBlockchain}) {
-            Mockito.when(blockchain.validateNextBlock(Mockito.any())).thenReturn(true);
-            Mockito.when(blockchain.getLastBlock()).thenReturn(new Block("", List.of(), 0));
+        File genesisBlockFile = new File(Node.GENESIS_BLOCK_PATH);
+        String genesisBlock = Files.readString(genesisBlockFile.toPath());
+
+        File tmpJsonPath = File.createTempFile("test", ".json");
+
+        try (FileWriter writer = new FileWriter(tmpJsonPath)) {
+            writer.write("[");
+            writer.write(genesisBlock);
+            writer.write("]");
         }
-    }
 
-    @BeforeEach
-    public void readyBrokers() {
+        tmpJsonPath.deleteOnExit();
+
+        Blockchain aliceBlockchain = new BlockchainImpl(serverKeyService, mockEngine, 1, tmpJsonPath.getAbsolutePath());
+        Blockchain bobBlockchain = new BlockchainImpl(serverKeyService, mockEngine, 1, tmpJsonPath.getAbsolutePath());
+        Blockchain carlBlockchain = new BlockchainImpl(serverKeyService, mockEngine, 1, tmpJsonPath.getAbsolutePath());
+        Blockchain jeffBlockchain = new BlockchainImpl(serverKeyService, mockEngine, 1, tmpJsonPath.getAbsolutePath());
+
+        List.of(aliceBlockchain, bobBlockchain, carlBlockchain, jeffBlockchain).forEach (
+                (blockchain -> {
+                    try {
+                        blockchain.bootstrap(Node.GENESIS_BLOCK_PATH);
+                    } catch (BootstrapException e) {
+                        throw new RuntimeException(e);
+                    }
+                })
+        );
+
         aliceBroker = new ConsensusBroker(
                 aliceProcess,
                 new Process[]{bobProcess, carlProcess, jeffProcess},
@@ -154,6 +167,11 @@ public class ConsensusTest {
                 blockTime,
                 1
         );
+    }
+
+    @BeforeEach
+    public void readyBrokers() {
+
     }
 
     @Test
@@ -407,7 +425,7 @@ public class ConsensusTest {
         Transaction carlTransaction = generateTransaction("he-llo");
 
         jeffBroker.addClientRequest(aliceTransaction, carlTransaction);
-        aliceBroker.addClientRequest(aliceTransaction);
+        aliceBroker.addClientRequest(aliceTransaction, bobTransaction);
         bobBroker.addClientRequest(bobTransaction);
         carlBroker.addClientRequest(carlTransaction);
 
@@ -514,18 +532,24 @@ public class ConsensusTest {
 
     private Transaction generateTransaction(String content) throws Exception {
         String clientId = "deaddeaddeaddeaddeaddeaddeaddeaddeaddead";
+        MessageDigest digest = MessageDigest.getInstance("SHA256");
+        String hashContent = Base64.getEncoder().encodeToString(digest.digest(content.getBytes()));
         long nonce = ConsensusTest.nonce.incrementAndGet();
-        String signature = SecurityUtil.signTransaction(clientId, clientId + 1, nonce, content, 0, clientKeyService.loadPrivateKey(clientId));
-        return new Transaction(clientId, clientId + 1, nonce, content, 0, signature);
+        String signature = SecurityUtil.signTransaction(clientId, clientId + 1, nonce, hashContent, 0, clientKeyService.loadPrivateKey(clientId));
+        return new Transaction(clientId, clientId + 1, nonce, hashContent, 0, signature);
     }
 
     @AfterEach
-    public void normalize() {
+    public void normalize() throws InterruptedException {
+        // Let all messages go through before normalizing.
+        Thread.sleep(1000);
         for (ConsensusBroker broker: new ConsensusBroker[]{aliceBroker, bobBroker, carlBroker, jeffBroker}) {
             broker.returnToNormal();
             broker.resetEpoch();
+            broker.resetConsensusId();
             broker.clearClientQueue();
-            broker.stop();
+            broker.clearActiveInstances();
+            broker.clearMessageQueues();
         }
     }
 

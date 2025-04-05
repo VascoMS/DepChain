@@ -7,8 +7,6 @@ import common.model.ServerResponse;
 import common.model.Transaction;
 import common.model.TransactionType;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.security.PrivateKey;
 import java.util.List;
 import java.util.Random;
@@ -121,7 +119,7 @@ public class DepChainTest {
         return new ClientRequest(spoofedSenderId, TransactionType.ONCHAIN, transaction);
     }
 
-    private ClientRequest createOffChainTransferRequest(String senderId, String recipientId, int amount) throws Exception {
+    private ClientRequest createOffChainTransferRequest(String senderId, String recipientId) throws Exception {
         PrivateKey privateKey = CLIENT_KEY_SERVICE.loadPrivateKey(senderId);
 
         ClientOperations client = senderId.equals(alice.getId()) ? aliceClient : bobClient;
@@ -131,7 +129,7 @@ public class DepChainTest {
                 recipientId,
                 currentNonce,
                 null,
-                amount,
+                10,
                 privateKey);
 
         Transaction transaction = new Transaction(
@@ -139,7 +137,7 @@ public class DepChainTest {
                 recipientId,
                 currentNonce,
                 null,
-                amount,
+                10,
                 signature
         );
 
@@ -192,7 +190,7 @@ public class DepChainTest {
     @Test
     public void offChainingAnOnChainTransaction() throws Exception {
         // Act - Alice trying to make a transfer using off-chain transaction type
-        ClientRequest offChainRequest = createOffChainTransferRequest(alice.getId(), bob.getId(), 10);
+        ClientRequest offChainRequest = createOffChainTransferRequest(alice.getId(), bob.getId());
         ServerResponse response = aliceClient.sendRequest(offChainRequest);
 
         // Assert
@@ -496,7 +494,7 @@ public class DepChainTest {
             String clientId = transferRecipient.equals(alice.getId()) ? bob.getId() : alice.getId();
 
             // Create off-chain transfer request
-            ClientRequest clientRequest = createOffChainTransferRequest(clientId, transferRecipient, 10);
+            ClientRequest clientRequest = createOffChainTransferRequest(clientId, transferRecipient);
 
             // Act
             ServerResponse response = client.sendRequest(clientRequest);

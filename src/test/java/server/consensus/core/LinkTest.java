@@ -22,7 +22,6 @@ public class LinkTest {
 
     private static Process aliceProcess;
     private static Process bobProcess;
-    private static final String keyPrefix = "p";
 
     private static AuthenticatedPerfectLink aliceLink;
     private static AuthenticatedPerfectLink bobLink;
@@ -136,7 +135,7 @@ public class LinkTest {
     }
 
     @AfterAll
-    public static void stopLinks() throws Exception {
+    public static void stopLinks() {
         aliceLink.close();
         bobLink.close();
     }

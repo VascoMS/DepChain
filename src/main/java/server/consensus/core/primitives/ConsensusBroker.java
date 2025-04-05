@@ -151,10 +151,6 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
         consensusMessageQueues.get(cPayload.getConsensusId()).add(cPayload);
     }
 
-    public synchronized void skipConsensusRound() {
-        currentConsensusRound.incrementAndGet();
-    }
-
     private Block buildBlock() throws Exception {
         List<Transaction> transactions = new ArrayList<>();
         mempool.drainTo(transactions, 8);
@@ -209,10 +205,16 @@ public class ConsensusBroker implements Observer<Message>, Subject<ConsensusOutc
 
     public void clearClientQueue() { mempool.clear(); }
 
+    public void clearActiveInstances() { activeConsensusInstances.clear(); }
+
+    public void clearMessageQueues() { consensusMessageQueues.clear(); }
+
     public synchronized boolean iAmLeader() {
         int myIndex = Integer.parseInt(myProcess.getId().substring(1));
         return this.totalEpochs % (peers.length + 1) == myIndex;
     }
+
+    public void resetConsensusId() { this.currentConsensusRound.set(0); }
 
     public synchronized void resetEpoch() { this.totalEpochs = 0; }
 
