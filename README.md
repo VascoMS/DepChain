@@ -1,6 +1,7 @@
 # DepChain
 
-This repository contains the code and report of the project made by Group 15.
+This repository contains the code and report of the project made by Group 15 for the Highly Dependable Sytems course.
+The [REPORT](docs/report-phase2.pdf) document provides a detailed overview of the key technical decisions and various components of the implemented project.
 
 Team Members:
 - Vasco Rodrigues das Neves de Magalhães e Silva (99132)
